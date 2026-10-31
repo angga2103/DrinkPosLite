@@ -437,23 +437,48 @@ void main() {
     });
 
     // 18 & 19. Clock-in, Clock-out & Menghitung keterlambatan
-    test('18 & 19. Clock-in, clock-out dan perhitungan keterlambatan', () async {
+    test('18 & 19. Clock-in, clock-out dengan selfie watermark & anti kecurangan', () async {
       final employees = await employeeRepo.getEmployees();
       expect(employees.isNotEmpty, isTrue);
 
-      // Scheduled 08:00, clock in via attendanceRepo
+      // Scheduled 08:00, clock in via attendanceRepo dengan foto selfie
       final att = await attendanceRepo.clockIn(
         userId: 'usr_cashier',
         enteredPin: '3456',
         scheduledIn: '08:00',
+        photoPath: '/storage/attendance_selfies/Selfie_CLOCK-IN_Siti_12345.jpg',
       );
       expect(att.isClockedIn, isTrue);
+      expect(att.photoPath, isNotNull);
+      expect(att.hasPhoto, isTrue);
+
+      // Pencegahan dobel clock-in di hari yang sama
+      expect(
+        () => attendanceRepo.clockIn(
+          userId: 'usr_cashier',
+          enteredPin: '3456',
+          scheduledIn: '08:00',
+        ),
+        throwsException,
+      );
 
       final out = await attendanceRepo.clockOut(
         userId: 'usr_cashier',
         enteredPin: '3456',
+        photoPath: '/storage/attendance_selfies/Selfie_CLOCK-OUT_Siti_12345.jpg',
       );
       expect(out.isClockedOut, isTrue);
+      expect(out.photoPath, contains('CLOCK-OUT'));
+
+      // Tes pencatatan Izin / Sakit oleh Owner/Manager
+      final leave = await attendanceRepo.recordLeave(
+        userId: 'usr_manager',
+        status: 'IZIN',
+        notes: 'Izin urusan keluarga',
+        recordedByUserId: 'usr_owner',
+      );
+      expect(leave.status, equals('IZIN'));
+      expect(leave.notes, equals('Izin urusan keluarga'));
     });
 
     // 20 & 21. Mengunci akun setelah 5x salah PIN & Membuka akun oleh owner

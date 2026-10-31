@@ -57,6 +57,9 @@ class AppDatabase {
         try {
           await db.execute("ALTER TABLE users ADD COLUMN permissions TEXT DEFAULT '';");
         } catch (_) {}
+        try {
+          await db.execute('ALTER TABLE attendance ADD COLUMN photo_path TEXT;');
+        } catch (_) {}
       },
       onCreate: (db, version) async {
         final batch = db.batch();

@@ -365,6 +365,7 @@ class DatabaseSchema {
       lateness_minutes INTEGER DEFAULT 0,
       status TEXT DEFAULT 'HADIR', -- HADIR, TERLAMBAT, PULANG_CEPAT, IZIN, ALPA
       notes TEXT,
+      photo_path TEXT,
       FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
     );
     ''',

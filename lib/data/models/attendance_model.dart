@@ -9,6 +9,7 @@ class AttendanceModel {
   final int latenessMinutes;
   final String status; // 'HADIR', 'TERLAMBAT', 'PULANG_CEPAT', 'IZIN', 'ALPA'
   final String? notes;
+  final String? photoPath;
 
   AttendanceModel({
     required this.id,
@@ -21,10 +22,12 @@ class AttendanceModel {
     this.latenessMinutes = 0,
     this.status = 'HADIR',
     this.notes,
+    this.photoPath,
   });
 
   bool get isClockedIn => clockIn != null;
   bool get isClockedOut => clockOut != null;
+  bool get hasPhoto => photoPath != null && photoPath!.isNotEmpty;
 
   factory AttendanceModel.fromMap(Map<String, dynamic> map) {
     return AttendanceModel(
@@ -38,6 +41,7 @@ class AttendanceModel {
       latenessMinutes: map['lateness_minutes'] as int? ?? 0,
       status: map['status'] as String? ?? 'HADIR',
       notes: map['notes'] as String?,
+      photoPath: map['photo_path'] as String?,
     );
   }
 
@@ -53,6 +57,7 @@ class AttendanceModel {
       'lateness_minutes': latenessMinutes,
       'status': status,
       'notes': notes,
+      'photo_path': photoPath,
     };
   }
 }
