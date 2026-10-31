@@ -4,8 +4,9 @@
 GeneratedPluginRegistrant.java
 .cxx/
 
-# Remember to never publicly share your keystore.
-# See https://flutter.dev/to/reference-keystore
+# Keystores
 key.properties
 **/*.keystore
 **/*.jks
+!android/app/drinkpos-release-key.jks
+!drinkpos-release-key.jks
