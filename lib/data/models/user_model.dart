@@ -29,6 +29,38 @@ class UserModel {
     this.permissions = const [],
   });
 
+  UserModel copyWith({
+    String? id,
+    String? name,
+    String? role,
+    String? pinHash,
+    bool? isActive,
+    bool? isLocked,
+    int? failedAttempts,
+    String? joinDate,
+    double? monthlySalary,
+    String? shiftStartTime,
+    String? shiftEndTime,
+    String? shiftName,
+    List<String>? permissions,
+  }) {
+    return UserModel(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      role: role ?? this.role,
+      pinHash: pinHash ?? this.pinHash,
+      isActive: isActive ?? this.isActive,
+      isLocked: isLocked ?? this.isLocked,
+      failedAttempts: failedAttempts ?? this.failedAttempts,
+      joinDate: joinDate ?? this.joinDate,
+      monthlySalary: monthlySalary ?? this.monthlySalary,
+      shiftStartTime: shiftStartTime ?? this.shiftStartTime,
+      shiftEndTime: shiftEndTime ?? this.shiftEndTime,
+      shiftName: shiftName ?? this.shiftName,
+      permissions: permissions ?? this.permissions,
+    );
+  }
+
   bool get isOwner => role == 'OWNER';
   bool get isManager => role == 'MANAGER';
   bool get isCashier => role == 'CASHIER';

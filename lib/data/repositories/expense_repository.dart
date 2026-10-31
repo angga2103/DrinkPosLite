@@ -86,8 +86,35 @@ class ExpenseRepository {
     });
   }
 
-  Future<void> deleteExpense(String id, {String? userId}) async {
+  Future<void> deleteExpense(String id, {String? userId, String? userName}) async {
     final db = await _appDb.database;
-    await db.delete('expenses', where: 'id = ?', whereArgs: [id]);
+    await db.transaction((txn) async {
+      final expRows = await txn.query('expenses', where: 'id = ?', whereArgs: [id]);
+      if (expRows.isEmpty) return;
+
+      final exp = ExpenseModel.fromMap(expRows.first);
+
+      // Revert shift cash if it was a cash expense and shift is still OPEN
+      if (exp.isCash && exp.shiftId != null) {
+        await txn.rawUpdate('''
+          UPDATE shifts
+          SET total_cash_expenses = total_cash_expenses - ?,
+              expected_cash = initial_cash + total_cash_sales - (total_cash_expenses - ?)
+          WHERE id = ? AND status = 'OPEN'
+        ''', [exp.amount, exp.amount, exp.shiftId]);
+      }
+
+      await txn.delete('expenses', where: 'id = ?', whereArgs: [id]);
+
+      await AuditLogger.log(
+        action: 'EXPENSE_DELETE',
+        entityType: 'EXPENSE',
+        entityId: id,
+        userId: userId,
+        userName: userName,
+        reason: 'Hapus pengeluaran ${exp.categoryName}: Rp${exp.amount} (Kas dikembalikan ke shift)',
+        db: txn,
+      );
+    });
   }
 }

@@ -54,45 +54,50 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Primary Quick Action Buttons (Cashier sees 3 buttons; Owner/Manager sees 4)
+              // Primary Quick Action Buttons (strictly filtered by role & permissions)
               Row(
                 children: [
-                  Expanded(
-                    child: _quickActionButton(
-                      context: context,
-                      label: 'Mulai Jualan',
-                      icon: Icons.point_of_sale,
-                      color: AppColors.primary,
-                      onTap: () => Navigator.of(context).pushReplacement(
-                        MaterialPageRoute(builder: (_) => const PosScreen()),
+                  if (currentUser?.canAccess('pos') ?? true)
+                    Expanded(
+                      child: _quickActionButton(
+                        context: context,
+                        label: 'Mulai Jualan',
+                        icon: Icons.point_of_sale,
+                        color: AppColors.primary,
+                        onTap: () => Navigator.of(context).pushReplacement(
+                          MaterialPageRoute(builder: (_) => const PosScreen()),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _quickActionButton(
-                      context: context,
-                      label: 'Laporan',
-                      icon: Icons.bar_chart,
-                      color: AppColors.secondary,
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const ReportsScreen()),
+                  if (currentUser?.canAccess('reports') ?? false) ...[
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _quickActionButton(
+                        context: context,
+                        label: 'Laporan',
+                        icon: Icons.bar_chart,
+                        color: AppColors.secondary,
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const ReportsScreen()),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _quickActionButton(
-                      context: context,
-                      label: 'Stok',
-                      icon: Icons.inventory_2,
-                      color: AppColors.info,
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const InventoryScreen()),
+                  ],
+                  if (currentUser?.canAccess('inventory') ?? false) ...[
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _quickActionButton(
+                        context: context,
+                        label: 'Stok',
+                        icon: Icons.inventory_2,
+                        color: AppColors.info,
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const InventoryScreen()),
+                        ),
                       ),
                     ),
-                  ),
-                  if (!isCashier) ...[
+                  ],
+                  if (currentUser?.canAccess('employees') ?? false) ...[
                     const SizedBox(width: 8),
                     Expanded(
                       child: _quickActionButton(

@@ -48,7 +48,8 @@ class AuthRepository {
 
     final user = UserModel.fromMap(res.first);
 
-    if (user.isLocked) {
+    // If account is locked and NOT the owner, block immediately
+    if (user.isLocked && !user.isOwner) {
       return AuthResult(
         success: false,
         user: user,
@@ -60,43 +61,60 @@ class AuthRepository {
     final isCorrect = PinSecurity.verifyPin(enteredPin, user.pinHash);
 
     if (isCorrect) {
-      // Reset failed attempts on successful login
-      if (user.failedAttempts > 0) {
-        await db.update('users', {'failed_attempts': 0}, where: 'id = ?', whereArgs: [userId]);
+      // Reset failed attempts and clear any lock on successful login
+      if (user.failedAttempts > 0 || user.isLocked) {
+        await db.update('users', {
+          'failed_attempts': 0,
+          'is_locked': 0,
+        }, where: 'id = ?', whereArgs: [userId]);
       }
-      return AuthResult(success: true, user: user);
-    } else {
-      final newFailedAttempts = user.failedAttempts + 1;
-      final shouldLock = newFailedAttempts >= AppConstants.maxPinAttempts;
-
-      await db.update(
-        'users',
-        {
-          'failed_attempts': newFailedAttempts,
-          'is_locked': shouldLock ? 1 : 0,
-        },
-        where: 'id = ?',
-        whereArgs: [userId],
+      return AuthResult(
+        success: true,
+        user: user.copyWith(failedAttempts: 0, isLocked: false),
       );
+    }
 
-      if (shouldLock) {
-        await AuditLogger.log(
-          action: 'ACCOUNT_LOCKED',
-          entityType: 'USER',
-          entityId: userId,
-          userName: user.name,
-          reason: 'Akun dikunci otomatis setelah $newFailedAttempts kali salah PIN',
-          db: db,
-        );
+    // Handle failed attempt
+    final newFailedAttempts = user.failedAttempts + 1;
+    final shouldLock = newFailedAttempts >= AppConstants.maxPinAttempts && !user.isOwner;
+
+    await db.update(
+      'users',
+      {
+        'failed_attempts': newFailedAttempts,
+        'is_locked': shouldLock ? 1 : 0,
+      },
+      where: 'id = ?',
+      whereArgs: [userId],
+    );
+
+    if (shouldLock) {
+      await AuditLogger.log(
+        action: 'ACCOUNT_LOCKED',
+        entityType: 'USER',
+        entityId: userId,
+        userName: user.name,
+        reason: 'Akun dikunci otomatis setelah $newFailedAttempts kali salah PIN',
+        db: db,
+      );
+      return AuthResult(
+        success: false,
+        user: user.copyWith(failedAttempts: newFailedAttempts, isLocked: true),
+        isLocked: true,
+        errorMessage: 'PIN salah 5 kali! Akun Anda telah dikunci. Hubungi Pemilik (Owner).',
+      );
+    } else {
+      if (user.isOwner) {
         return AuthResult(
           success: false,
-          isLocked: true,
-          errorMessage: 'PIN salah 5 kali! Akun Anda telah dikunci. Hubungi Pemilik (Owner).',
+          user: user.copyWith(failedAttempts: newFailedAttempts),
+          errorMessage: 'PIN Pemilik salah (Percobaan ke-$newFailedAttempts). Akun Pemilik aman dan tidak terkunci permanen.',
         );
       } else {
         final remaining = AppConstants.maxPinAttempts - newFailedAttempts;
         return AuthResult(
           success: false,
+          user: user.copyWith(failedAttempts: newFailedAttempts),
           errorMessage: 'PIN salah. Sisa kesempatan: $remaining kali sebelum akun dikunci.',
         );
       }

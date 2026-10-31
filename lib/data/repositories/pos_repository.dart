@@ -448,13 +448,41 @@ class PosRepository {
           revCash = trx.finalAmount - trx.qrisAmount;
         }
 
-        await txn.rawUpdate('''
+        final updatedRows = await txn.rawUpdate('''
           UPDATE shifts
           SET total_cash_sales = total_cash_sales - ?,
               total_qris_sales = total_qris_sales - ?,
               expected_cash = initial_cash + (total_cash_sales - ?) - total_cash_expenses
           WHERE id = ? AND status = 'OPEN'
         ''', [revCash, revQris, revCash, trx.shiftId]);
+
+        // If the original shift is already CLOSED and money was refunded in cash:
+        // Record an expense adjustment in the currently active OPEN shift to keep today's drawer balanced
+        if (updatedRows == 0 && revCash > 0) {
+          final activeShifts = await txn.query('shifts', where: 'status = ?', whereArgs: ['OPEN'], limit: 1);
+          if (activeShifts.isNotEmpty) {
+            final activeShiftId = activeShifts.first['id'] as String;
+            final refundExpId = IdGenerator.generateId(prefix: 'exp');
+            await txn.insert('expenses', {
+              'id': refundExpId,
+              'shift_id': activeShiftId,
+              'category_id': 'expcat_refund',
+              'category_name': 'Refund / Pembatalan Transaksi',
+              'amount': revCash,
+              'date': now.substring(0, 10),
+              'payment_method': 'TUNAI',
+              'description': 'Refund kas pembatalan transaksi lampau (${trx.transactionNumber}): $cancellationReason',
+              'created_at': now,
+            });
+
+            await txn.rawUpdate('''
+              UPDATE shifts
+              SET total_cash_expenses = total_cash_expenses + ?,
+                  expected_cash = initial_cash + total_cash_sales - (total_cash_expenses + ?)
+              WHERE id = ? AND status = 'OPEN'
+            ''', [revCash, revCash, activeShiftId]);
+          }
+        }
       }
 
       await AuditLogger.log(

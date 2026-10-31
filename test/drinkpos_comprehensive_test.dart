@@ -853,5 +853,113 @@ void main() {
       expect(loaded.receiptFooter, contains('Matur Nuwun'));
       expect(loaded.logoPath, '/dummy/path/logo_store.png');
     });
+
+    // 22. Proteksi Owner Lockout & Auto-Unlock (Fix Celah 1)
+    test('22. Akun Owner tidak terkunci permanen dan dapat auto-unlock saat memasukkan PIN benar', () async {
+      // Masukkan PIN salah 6 kali untuk Owner
+      for (int i = 0; i < 6; i++) {
+        final res = await authRepo.loginWithPin(userId: 'usr_owner', enteredPin: '9999');
+        expect(res.success, false);
+        expect(res.isLocked, false); // Owner tidak diset isLocked = true
+      }
+
+      // Owner memasukkan PIN benar (1234)
+      final successRes = await authRepo.loginWithPin(userId: 'usr_owner', enteredPin: '1234');
+      expect(successRes.success, true);
+      expect(successRes.user?.failedAttempts, 0);
+      expect(successRes.user?.isLocked, false);
+    });
+
+    // 23. Pemulihan Kas Shift Saat Pengeluaran Dihapus (Fix Celah 4)
+    test('23. Menghapus pengeluaran kas otomatis mengembalikan saldo kas laci shift aktif', () async {
+      // Pastikan ada shift aktif
+      var currentShift = await shiftRepo.getCurrentOpenShift();
+      if (currentShift == null) {
+        currentShift = await shiftRepo.openShift(userId: 'usr_owner', userName: 'Ansor', initialCash: 100000);
+      }
+
+      final initialExpected = currentShift.expectedCash;
+
+      // Catat pengeluaran kas Rp 25.000 dengan kategori valid (expcat_other)
+      final exp = ExpenseModel(
+        id: 'exp_test_delete',
+        shiftId: currentShift.id,
+        categoryId: 'expcat_other',
+        categoryName: 'Operasional Lainnya',
+        amount: 25000,
+        date: DateTime.now().toIso8601String().substring(0, 10),
+        paymentMethod: 'TUNAI',
+        description: 'Beli sedotan & plastik',
+      );
+
+      await expenseRepo.saveExpense(expense: exp, currentShiftId: currentShift.id);
+
+      // Verifikasi kas shift terpotong
+      var shiftAfterExp = await shiftRepo.getCurrentOpenShift();
+      expect(shiftAfterExp!.totalCashExpenses, greaterThanOrEqualTo(25000));
+
+      // Hapus pengeluaran
+      await expenseRepo.deleteExpense(exp.id, userId: 'usr_owner', userName: 'Ansor');
+
+      // Verifikasi kas shift pulih kembali
+      var shiftAfterDelete = await shiftRepo.getCurrentOpenShift();
+      expect(shiftAfterDelete!.expectedCash, initialExpected);
+    });
+
+    // 24. Sinkronisasi Jarak Jauh Menjaga Stok Nyata Outlet (Fix Celah 2)
+    test('24. Impor paket .dpos tidak menimpa current_stock outlet lokal yang sedang aktif', () async {
+      // Ambil bahan yang ada (misal: Daun Teh)
+      final ingList = await ingredientRepo.getIngredients();
+      final tea = ingList.firstWhere((i) => i.name.contains('Teh'));
+      final localStockBefore = tea.currentStock;
+
+      // Simulasikan paket sync dari owner yang memiliki nilai current_stock berbeda (misal 99999)
+      final fakeOwnerData = {
+        'app': AppConstants.appName,
+        'categories': [],
+        'products': [],
+        'product_variants': [],
+        'modifiers': [],
+        'recipes': [],
+        'recipe_items': [],
+        'purchases': [],
+        'purchase_items': [],
+        'stock_batches': [],
+        'ingredients': [
+          {
+            'id': tea.id,
+            'name': tea.name,
+            'unit': tea.unit,
+            'current_stock': 99999.0, // Stock versi owner
+            'minimum_stock': 15.0,
+            'cost_per_unit': tea.costPerUnit,
+            'last_buy_price': 50.0,
+            'is_packaging': 0,
+            'created_at': DateTime.now().toIso8601String(),
+            'updated_at': DateTime.now().toIso8601String(),
+          }
+        ],
+      };
+
+      await SyncPackageService.applyPackage(data: fakeOwnerData, appliedByUserId: 'usr_cashier');
+
+      // Verifikasi bahwa current_stock lokal outlet TIDAK tertimpa menjadi 99999
+      final teaAfterSync = await ingredientRepo.getIngredientById(tea.id);
+      expect(teaAfterSync!.currentStock, localStockBefore);
+      expect(teaAfterSync.minimumStock, 15.0); // metadata lain tetap diperbarui
+    });
+
+    // 25. Pencegahan Multiple Shift Aktif (Fix Celah 8)
+    test('25. Membuka shift baru saat masih ada shift aktif akan ditolak jika autoClosePrevious false', () async {
+      // Pastikan ada shift aktif
+      final activeShift = await shiftRepo.getCurrentOpenShift();
+      expect(activeShift, isNotNull);
+
+      // Coba buka shift lagi tanpa menutup yang lama (autoClosePrevious: false)
+      expect(
+        () async => await shiftRepo.openShift(userId: 'usr_cashier', userName: 'Siti', initialCash: 50000, autoClosePrevious: false),
+        throwsA(isA<Exception>()),
+      );
+    });
   });
 }

@@ -194,11 +194,18 @@ class SyncPackageService {
           await txn.insert('categories', Map<String, dynamic>.from(c), conflictAlgorithm: ConflictAlgorithm.replace);
         }
 
-        // 2. Ingredients (Stok & Bahan Baku)
+        // 2. Ingredients (Stok & Bahan Baku) - PRESERVE OUTLET LOCAL REAL-TIME STOCK
         final ingredients = (data['ingredients'] as List? ?? []);
         ingredientsCount = ingredients.length;
         for (final ing in ingredients) {
-          await txn.insert('ingredients', Map<String, dynamic>.from(ing), conflictAlgorithm: ConflictAlgorithm.replace);
+          final ingMap = Map<String, dynamic>.from(ing);
+          final ingId = ingMap['id'] as String;
+          final existing = await txn.query('ingredients', where: 'id = ?', whereArgs: [ingId]);
+          if (existing.isNotEmpty) {
+            // Preserve the outlet's physical real-time stock!
+            ingMap['current_stock'] = existing.first['current_stock'];
+          }
+          await txn.insert('ingredients', ingMap, conflictAlgorithm: ConflictAlgorithm.replace);
         }
 
         // 3. Products

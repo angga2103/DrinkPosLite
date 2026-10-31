@@ -26,8 +26,35 @@ class ShiftRepository {
     required String userId,
     required String userName,
     required double initialCash,
+    bool autoClosePrevious = true,
   }) async {
     final db = await _appDb.database;
+
+    // Prevent duplicate active open shifts by safely auto-closing previous open shift
+    final activeShifts = await db.query('shifts', where: 'status = ?', whereArgs: ['OPEN']);
+    if (activeShifts.isNotEmpty) {
+      if (autoClosePrevious) {
+        final closeTime = DateTime.now().toIso8601String();
+        for (final s in activeShifts) {
+          final sExp = (s['expected_cash'] as num? ?? 0.0).toDouble();
+          await db.update(
+            'shifts',
+            {
+              'status': 'CLOSED',
+              'end_time': closeTime,
+              'actual_cash': sExp,
+              'cash_difference': 0.0,
+              'difference_note': 'Ditutup otomatis oleh pembukaan shift baru ($userName)',
+            },
+            where: 'id = ?',
+            whereArgs: [s['id']],
+          );
+        }
+      } else {
+        throw Exception('Tidak dapat membuka shift baru: Masih ada shift aktif yang belum ditutup!');
+      }
+    }
+
     final now = DateTime.now().toIso8601String();
     final shiftId = IdGenerator.generateId(prefix: 'shf');
 
