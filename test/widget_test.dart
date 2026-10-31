@@ -30,7 +30,7 @@ void main() {
     );
 
     expect(find.text('DrinkPOS Lite'), findsOneWidget);
-    expect(find.text('Developed by Ansor.studi'), findsOneWidget);
+    expect(find.text(AppConstants.developedByText), findsOneWidget);
     expect(find.text('Contact: 081775700114'), findsOneWidget);
     expect(find.text('Mulai Jualan'), findsOneWidget);
     expect(find.text('Omzet Hari Ini'), findsOneWidget);
