@@ -25,6 +25,10 @@ class DateFormatter {
     }
   }
 
+  static String formatDateFull(DateTime? dateTime) {
+    return formatDate(dateTime);
+  }
+
   static String formatDateShort(DateTime? dateTime) {
     if (dateTime == null) return '-';
     try {

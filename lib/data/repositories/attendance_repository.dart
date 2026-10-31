@@ -106,7 +106,6 @@ class AttendanceRepository {
     }
 
     final now = DateTime.now();
-    final today = now.toIso8601String().substring(0, 10);
     final clockOutTime = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 
     final existing = await getTodayAttendance(userId);

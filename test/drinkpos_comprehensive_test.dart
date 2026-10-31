@@ -6,10 +6,12 @@ import 'package:drinkpos_lite/core/constants/app_constants.dart';
 import 'package:drinkpos_lite/core/database/app_database.dart';
 import 'package:drinkpos_lite/core/database/database_schema.dart';
 import 'package:drinkpos_lite/core/database/seed_data.dart';
+import 'package:drinkpos_lite/core/services/attendance_photo_service.dart';
 import 'package:drinkpos_lite/core/services/excel_report_service.dart';
 import 'package:drinkpos_lite/core/services/pdf_report_service.dart';
 import 'package:drinkpos_lite/core/services/share_service.dart';
 import 'package:drinkpos_lite/core/services/sync_package_service.dart';
+import 'package:drinkpos_lite/core/utils/date_formatter.dart';
 import 'package:drinkpos_lite/data/models/expense_model.dart';
 import 'package:drinkpos_lite/data/models/ingredient_model.dart';
 import 'package:drinkpos_lite/data/models/product_model.dart';
@@ -469,6 +471,10 @@ void main() {
       );
       expect(out.isClockedOut, isTrue);
       expect(out.photoPath, contains('CLOCK-OUT'));
+
+      // Tes format tanggal watermark
+      final dateFull = DateFormatter.formatDateFull(DateTime.now());
+      expect(dateFull.isNotEmpty, isTrue);
 
       // Tes pencatatan Izin / Sakit oleh Owner/Manager
       final leave = await attendanceRepo.recordLeave(
