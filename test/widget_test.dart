@@ -63,7 +63,7 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
     expect(find.text('Pengaturan Dual Printer Thermal'), findsOneWidget);
     expect(find.text('1. Printer Kasir (Struk Konsumen)'), findsOneWidget);
     expect(find.text('2. Printer Dapur / Barista (Tiket Pesanan)'), findsOneWidget);
