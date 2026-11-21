@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:drinkpos_lite/core/constants/app_constants.dart';
+import 'package:drinkpos_lite/presentation/screens/modifiers/modifier_management_screen.dart';
 import 'package:drinkpos_lite/presentation/widgets/custom_button.dart';
 import 'package:drinkpos_lite/presentation/widgets/metric_card.dart';
 
@@ -35,5 +37,16 @@ void main() {
     expect(find.text('Mulai Jualan'), findsOneWidget);
     expect(find.text('Omzet Hari Ini'), findsOneWidget);
     expect(find.text('Rp 1.500.000'), findsOneWidget);
+  });
+
+  testWidgets('ModifierManagementScreen compiles and renders properly', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(
+          home: ModifierManagementScreen(),
+        ),
+      ),
+    );
+    expect(find.byType(ModifierManagementScreen), findsOneWidget);
   });
 }

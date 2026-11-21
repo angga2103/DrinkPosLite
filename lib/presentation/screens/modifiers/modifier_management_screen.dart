@@ -337,11 +337,8 @@ class _ModifierManagementScreenState extends State<ModifierManagementScreen> {
                   icon: Icons.tune,
                   title: 'Belum Ada Level / Topping',
                   message: 'Buat grup level baru seperti Level Gula, Level Pedas, atau Topping Tambahan.',
-                  actionButton: ElevatedButton.icon(
-                    icon: const Icon(Icons.add),
-                    label: const Text('Tambah Grup Baru'),
-                    onPressed: () => _showAddEditGroupDialog(),
-                  ),
+                  buttonText: 'Tambah Grup Baru',
+                  onButtonPressed: () => _showAddEditGroupDialog(),
                 )
               : ListView.separated(
                   padding: const EdgeInsets.all(16),
