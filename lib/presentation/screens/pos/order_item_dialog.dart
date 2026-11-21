@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/currency_formatter.dart';
+import '../../../data/models/modifier_group_model.dart';
 import '../../../data/models/modifier_model.dart';
 import '../../../data/models/product_model.dart';
 import '../../../data/models/transaction_model.dart';
@@ -29,12 +30,12 @@ class _OrderItemDialogState extends State<OrderItemDialog> {
   final ProductRepository _productRepo = ProductRepository();
 
   ProductVariantModel? _selectedVariant;
-  final Map<String, ModifierModel> _selectedModifiersByGroup = {};
-  final List<ModifierModel> _selectedToppings = [];
+  List<ModifierGroupModel> _assignedGroups = [];
+  final Map<String, ModifierModel> _singleSelections = {}; // groupName -> selected ModifierModel
+  final Map<String, List<ModifierModel>> _multiSelections = {}; // groupName -> List<ModifierModel>
   final TextEditingController _notesController = TextEditingController();
   int _quantity = 1;
-
-  List<ModifierModel> _allModifiers = [];
+  bool _isLoading = true;
 
   @override
   void initState() {
@@ -44,42 +45,53 @@ class _OrderItemDialogState extends State<OrderItemDialog> {
   }
 
   Future<void> _loadModifiers() async {
-    final mods = await _productRepo.getModifiers();
+    final groups = await _productRepo.getModifiersForProduct(widget.product.id);
     if (mounted) {
       setState(() {
-        _allModifiers = mods;
-
-        // Set default sugar & ice
-        final defaultSugar = mods.firstWhere(
-          (m) => m.groupName == 'Gula' && m.name.contains('Normal'),
-          orElse: () => mods.firstWhere((m) => m.groupName == 'Gula', orElse: () => ModifierModel(id: '', groupName: 'Gula', name: 'Normal')),
-        );
-        final defaultIce = mods.firstWhere(
-          (m) => m.groupName == 'Es' && m.name.contains('Normal'),
-          orElse: () => mods.firstWhere((m) => m.groupName == 'Es', orElse: () => ModifierModel(id: '', groupName: 'Es', name: 'Normal')),
-        );
-
-        if (defaultSugar.id.isNotEmpty) _selectedModifiersByGroup['Gula'] = defaultSugar;
-        if (defaultIce.id.isNotEmpty) _selectedModifiersByGroup['Es'] = defaultIce;
+        _assignedGroups = groups;
+        for (final group in groups) {
+          if (group.isSingleChoice && group.options.isNotEmpty) {
+            // Pilih opsi default: yang mengandung 'Normal' / 'Sedang' atau opsi pertama
+            final defaultOpt = group.options.firstWhere(
+              (o) =>
+                  o.name.toLowerCase().contains('normal') ||
+                  o.name.toLowerCase().contains('sedang') ||
+                  o.name.toLowerCase().contains('standar'),
+              orElse: () => group.options.first,
+            );
+            _singleSelections[group.name] = defaultOpt;
+          } else if (group.isMultipleChoice) {
+            _multiSelections[group.name] = [];
+          }
+        }
+        _isLoading = false;
       });
     }
   }
 
   double _calculateCurrentPrice() {
     final base = _selectedVariant?.price ?? widget.product.basePrice;
-    final toppingsTotal = _selectedToppings.fold(0.0, (s, t) => s + t.extraPrice);
-    return base + toppingsTotal;
+    double extra = 0.0;
+
+    // Tambahan dari single choice (misal level rasa tertentu yang berbayar)
+    for (final opt in _singleSelections.values) {
+      extra += opt.extraPrice;
+    }
+
+    // Tambahan dari multi choice (misal aneka topping)
+    for (final list in _multiSelections.values) {
+      for (final opt in list) {
+        extra += opt.extraPrice;
+      }
+    }
+
+    return base + extra;
   }
 
   @override
   Widget build(BuildContext context) {
     final unitPrice = _calculateCurrentPrice();
     final totalPrice = unitPrice * _quantity;
-
-    // Group modifiers
-    final sugarOptions = _allModifiers.where((m) => m.groupName == 'Gula').toList();
-    final iceOptions = _allModifiers.where((m) => m.groupName == 'Es').toList();
-    final toppingOptions = _allModifiers.where((m) => m.groupName == 'Topping').toList();
 
     return Container(
       decoration: const BoxDecoration(
@@ -138,12 +150,13 @@ class _OrderItemDialogState extends State<OrderItemDialog> {
             ),
             const Divider(height: 24),
 
-            // 1. Variant Selection (Small, Medium, Large)
+            // 1. Variant Selection (Small, Medium, Large) jika ada lebih dari 1 varian
             if (widget.product.variants.isNotEmpty) ...[
               const Text('Ukuran / Varian', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
+                runSpacing: 8,
                 children: widget.product.variants.map((variant) {
                   final isSelected = _selectedVariant?.id == variant.id;
                   return ChoiceChip(
@@ -165,98 +178,95 @@ class _OrderItemDialogState extends State<OrderItemDialog> {
               const SizedBox(height: 16),
             ],
 
-            // 2. Sugar Level Selection
-            if (sugarOptions.isNotEmpty) ...[
-              const Text('Level Gula', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                children: sugarOptions.map((sugar) {
-                  final isSelected = _selectedModifiersByGroup['Gula']?.id == sugar.id;
-                  return ChoiceChip(
-                    label: Text(sugar.name),
-                    selected: isSelected,
-                    selectedColor: AppColors.primaryContainer,
-                    labelStyle: TextStyle(
-                      color: isSelected ? AppColors.primary : AppColors.textPrimary,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                    ),
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() => _selectedModifiersByGroup['Gula'] = sugar);
-                      }
-                    },
-                  );
-                }).toList(),
+            // 2. Custom Modifier Groups yang hanya berlaku untuk produk ini
+            if (_isLoading) ...[
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: CircularProgressIndicator(),
+                ),
               ),
-              const SizedBox(height: 16),
+            ] else ...[
+              for (final group in _assignedGroups) ...[
+                if (group.options.isNotEmpty) ...[
+                  Row(
+                    children: [
+                      Text(group.name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                      if (group.isMultipleChoice)
+                        const Padding(
+                          padding: EdgeInsets.only(left: 6),
+                          child: Text(
+                            '(Bisa pilih lebih dari 1)',
+                            style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  if (group.isSingleChoice)
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: group.options.map((opt) {
+                        final isSelected = _singleSelections[group.name]?.id == opt.id;
+                        final extraStr = opt.extraPrice > 0 ? ' (+${CurrencyFormatter.format(opt.extraPrice)})' : '';
+                        return ChoiceChip(
+                          label: Text('${opt.name}$extraStr'),
+                          selected: isSelected,
+                          selectedColor: AppColors.primaryContainer,
+                          labelStyle: TextStyle(
+                            color: isSelected ? AppColors.primary : AppColors.textPrimary,
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          ),
+                          onSelected: (selected) {
+                            if (selected) {
+                              setState(() => _singleSelections[group.name] = opt);
+                            }
+                          },
+                        );
+                      }).toList(),
+                    )
+                  else
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: group.options.map((opt) {
+                        final list = _multiSelections[group.name] ?? [];
+                        final isSelected = list.any((item) => item.id == opt.id);
+                        final extraStr = opt.extraPrice > 0 ? ' (+${CurrencyFormatter.format(opt.extraPrice)})' : '';
+                        return FilterChip(
+                          label: Text('${opt.name}$extraStr'),
+                          selected: isSelected,
+                          selectedColor: AppColors.secondaryContainer,
+                          labelStyle: TextStyle(
+                            color: isSelected ? AppColors.secondary : AppColors.textPrimary,
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          ),
+                          onSelected: (selected) {
+                            setState(() {
+                              if (selected) {
+                                list.add(opt);
+                              } else {
+                                list.removeWhere((item) => item.id == opt.id);
+                              }
+                              _multiSelections[group.name] = list;
+                            });
+                          },
+                        );
+                      }).toList(),
+                    ),
+                  const SizedBox(height: 16),
+                ],
+              ],
             ],
 
-            // 3. Ice Level Selection
-            if (iceOptions.isNotEmpty) ...[
-              const Text('Level Es Batu', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                children: iceOptions.map((ice) {
-                  final isSelected = _selectedModifiersByGroup['Es']?.id == ice.id;
-                  return ChoiceChip(
-                    label: Text(ice.name),
-                    selected: isSelected,
-                    selectedColor: AppColors.primaryContainer,
-                    labelStyle: TextStyle(
-                      color: isSelected ? AppColors.primary : AppColors.textPrimary,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                    ),
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() => _selectedModifiersByGroup['Es'] = ice);
-                      }
-                    },
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 16),
-            ],
-
-            // 4. Topping Selection (Multi-select)
-            if (toppingOptions.isNotEmpty) ...[
-              const Text('Topping Tambahan', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                children: toppingOptions.map((top) {
-                  final isSelected = _selectedToppings.any((t) => t.id == top.id);
-                  return FilterChip(
-                    label: Text('${top.name} (+${CurrencyFormatter.format(top.extraPrice)})'),
-                    selected: isSelected,
-                    selectedColor: AppColors.secondaryContainer,
-                    labelStyle: TextStyle(
-                      color: isSelected ? AppColors.secondary : AppColors.textPrimary,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                    ),
-                    onSelected: (selected) {
-                      setState(() {
-                        if (selected) {
-                          _selectedToppings.add(top);
-                        } else {
-                          _selectedToppings.removeWhere((t) => t.id == top.id);
-                        }
-                      });
-                    },
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 16),
-            ],
-
-            // 5. Special Notes
+            // 3. Special Notes
             const Text('Catatan Khusus Pesanan', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
             const SizedBox(height: 6),
             TextField(
               controller: _notesController,
               decoration: const InputDecoration(
-                hintText: 'Contoh: Pisah es, jangan terlalu manis',
+                hintText: 'Contoh: Pisah es, jangan terlalu manis, dll.',
                 prefixIcon: Icon(Icons.note_alt_outlined, size: 20),
               ),
             ),
@@ -300,42 +310,31 @@ class _OrderItemDialogState extends State<OrderItemDialog> {
                     onPressed: () {
                       final List<TransactionModifierModel> appliedMods = [];
 
-                      // Add selected sugar
-                      final sugar = _selectedModifiersByGroup['Gula'];
-                      if (sugar != null) {
+                      // Kumpulkan modifier dari single choice
+                      for (final entry in _singleSelections.entries) {
+                        final opt = entry.value;
                         appliedMods.add(TransactionModifierModel(
                           id: '',
                           transactionItemId: '',
-                          modifierId: sugar.id,
-                          groupName: sugar.groupName,
-                          name: sugar.name,
-                          extraPrice: sugar.extraPrice,
+                          modifierId: opt.id,
+                          groupName: opt.groupName,
+                          name: opt.name,
+                          extraPrice: opt.extraPrice,
                         ));
                       }
 
-                      // Add selected ice
-                      final ice = _selectedModifiersByGroup['Es'];
-                      if (ice != null) {
-                        appliedMods.add(TransactionModifierModel(
-                          id: '',
-                          transactionItemId: '',
-                          modifierId: ice.id,
-                          groupName: ice.groupName,
-                          name: ice.name,
-                          extraPrice: ice.extraPrice,
-                        ));
-                      }
-
-                      // Add selected toppings
-                      for (final top in _selectedToppings) {
-                        appliedMods.add(TransactionModifierModel(
-                          id: '',
-                          transactionItemId: '',
-                          modifierId: top.id,
-                          groupName: top.groupName,
-                          name: top.name,
-                          extraPrice: top.extraPrice,
-                        ));
+                      // Kumpulkan modifier dari multi choice
+                      for (final list in _multiSelections.values) {
+                        for (final opt in list) {
+                          appliedMods.add(TransactionModifierModel(
+                            id: '',
+                            transactionItemId: '',
+                            modifierId: opt.id,
+                            groupName: opt.groupName,
+                            name: opt.name,
+                            extraPrice: opt.extraPrice,
+                          ));
+                        }
                       }
 
                       final cartItem = CartItem(

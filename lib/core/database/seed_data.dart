@@ -121,20 +121,24 @@ class SeedData {
       });
     }
 
-    // 5. Default Modifiers
+    // 5. Default Modifier Groups & Modifiers
+    await db.insert('modifier_groups', {'id': 'mod_grp_gula', 'name': 'Level Gula', 'selection_type': 'SINGLE', 'is_required': 1, 'display_order': 1});
+    await db.insert('modifier_groups', {'id': 'mod_grp_es', 'name': 'Level Es Batu', 'selection_type': 'SINGLE', 'is_required': 1, 'display_order': 2});
+    await db.insert('modifier_groups', {'id': 'mod_grp_topping', 'name': 'Topping Tambahan', 'selection_type': 'MULTIPLE', 'is_required': 0, 'display_order': 3});
+
     // Sugar levels
-    await db.insert('modifiers', {'id': 'mod_sug_100', 'group_name': 'Gula', 'name': 'Gula Normal (100%)', 'extra_price': 0, 'is_active': 1});
-    await db.insert('modifiers', {'id': 'mod_sug_50', 'group_name': 'Gula', 'name': 'Gula Sedikit (50%)', 'extra_price': 0, 'is_active': 1});
-    await db.insert('modifiers', {'id': 'mod_sug_0', 'group_name': 'Gula', 'name': 'Tanpa Gula (0%)', 'extra_price': 0, 'is_active': 1});
+    await db.insert('modifiers', {'id': 'mod_sug_100', 'group_name': 'Level Gula', 'name': 'Gula Normal (100%)', 'extra_price': 0, 'is_active': 1});
+    await db.insert('modifiers', {'id': 'mod_sug_50', 'group_name': 'Level Gula', 'name': 'Gula Sedikit (50%)', 'extra_price': 0, 'is_active': 1});
+    await db.insert('modifiers', {'id': 'mod_sug_0', 'group_name': 'Level Gula', 'name': 'Tanpa Gula (0%)', 'extra_price': 0, 'is_active': 1});
 
     // Ice levels
-    await db.insert('modifiers', {'id': 'mod_ice_norm', 'group_name': 'Es', 'name': 'Es Normal', 'extra_price': 0, 'is_active': 1});
-    await db.insert('modifiers', {'id': 'mod_ice_less', 'group_name': 'Es', 'name': 'Es Sedikit', 'extra_price': 0, 'is_active': 1});
-    await db.insert('modifiers', {'id': 'mod_ice_none', 'group_name': 'Es', 'name': 'Tanpa Es', 'extra_price': 0, 'is_active': 1});
+    await db.insert('modifiers', {'id': 'mod_ice_norm', 'group_name': 'Level Es Batu', 'name': 'Es Normal', 'extra_price': 0, 'is_active': 1});
+    await db.insert('modifiers', {'id': 'mod_ice_less', 'group_name': 'Level Es Batu', 'name': 'Es Sedikit', 'extra_price': 0, 'is_active': 1});
+    await db.insert('modifiers', {'id': 'mod_ice_none', 'group_name': 'Level Es Batu', 'name': 'Tanpa Es', 'extra_price': 0, 'is_active': 1});
 
     // Toppings
-    await db.insert('modifiers', {'id': 'mod_top_boba', 'group_name': 'Topping', 'name': 'Boba Brown Sugar', 'extra_price': 3000, 'ingredient_id': 'ing_boba', 'ingredient_amount': 30.0, 'is_active': 1});
-    await db.insert('modifiers', {'id': 'mod_top_jelly', 'group_name': 'Topping', 'name': 'Jelly Cincau Segar', 'extra_price': 2500, 'ingredient_id': 'ing_jelly', 'ingredient_amount': 25.0, 'is_active': 1});
+    await db.insert('modifiers', {'id': 'mod_top_boba', 'group_name': 'Topping Tambahan', 'name': 'Boba Brown Sugar', 'extra_price': 3000, 'ingredient_id': 'ing_boba', 'ingredient_amount': 30.0, 'is_active': 1});
+    await db.insert('modifiers', {'id': 'mod_top_jelly', 'group_name': 'Topping Tambahan', 'name': 'Jelly Cincau Segar', 'extra_price': 2500, 'ingredient_id': 'ing_jelly', 'ingredient_amount': 25.0, 'is_active': 1});
 
     // 6. Default Products
     // Product 1: Es Teh Solo Manis
@@ -151,6 +155,11 @@ class SeedData {
     await db.insert('product_variants', {'id': 'var_tea_s', 'product_id': 'prod_tea_solo', 'name': 'Small', 'price': 5000, 'is_default': 1, 'is_active': 1});
     await db.insert('product_variants', {'id': 'var_tea_m', 'product_id': 'prod_tea_solo', 'name': 'Medium', 'price': 7000, 'is_default': 0, 'is_active': 1});
     await db.insert('product_variants', {'id': 'var_tea_l', 'product_id': 'prod_tea_solo', 'name': 'Large', 'price': 9000, 'is_default': 0, 'is_active': 1});
+
+    // Hubungkan Es Teh Solo dengan grup level gula, es batu, dan topping
+    await db.insert('product_modifier_groups', {'product_id': 'prod_tea_solo', 'group_name': 'Level Gula', 'display_order': 1});
+    await db.insert('product_modifier_groups', {'product_id': 'prod_tea_solo', 'group_name': 'Level Es Batu', 'display_order': 2});
+    await db.insert('product_modifier_groups', {'product_id': 'prod_tea_solo', 'group_name': 'Topping Tambahan', 'display_order': 3});
 
     // Recipe for Es Teh Solo (Medium)
     await db.insert('recipes', {'id': 'rec_tea_m', 'product_id': 'prod_tea_solo', 'variant_id': 'var_tea_m', 'name': 'Resep Es Teh Medium', 'version': 1, 'created_at': now});

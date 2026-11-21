@@ -7,6 +7,7 @@ import '../../../data/repositories/product_repository.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/confirmation_dialog.dart';
 import '../../widgets/empty_state_view.dart';
+import '../modifiers/modifier_management_screen.dart';
 import 'product_form_screen.dart';
 
 class ProductListScreen extends StatefulWidget {
@@ -67,6 +68,17 @@ class _ProductListScreenState extends State<ProductListScreen> {
     return AppScaffold(
       title: 'Kelola Produk & Menu',
       currentRoute: '/products',
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.tune),
+          tooltip: 'Kelola Level & Topping',
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ModifierManagementScreen()),
+            );
+          },
+        ),
+      ],
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: AppColors.primary,
         icon: const Icon(Icons.add, color: Colors.white),

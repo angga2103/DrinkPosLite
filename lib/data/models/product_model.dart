@@ -49,6 +49,7 @@ class ProductModel {
   final String? imagePath;
   final List<ProductVariantModel> variants;
   final double? estimatedCogs; // Estimated HPP for primary variant
+  final List<String> modifierGroups; // Assigned modifier group names (e.g. Level Gula, Level Es Batu)
 
   ProductModel({
     required this.id,
@@ -61,6 +62,7 @@ class ProductModel {
     this.imagePath,
     this.variants = const [],
     this.estimatedCogs,
+    this.modifierGroups = const [],
   });
 
   ProductVariantModel? get defaultVariant {
@@ -71,7 +73,12 @@ class ProductModel {
     );
   }
 
-  factory ProductModel.fromMap(Map<String, dynamic> map, {List<ProductVariantModel>? variants, double? cogs}) {
+  factory ProductModel.fromMap(
+    Map<String, dynamic> map, {
+    List<ProductVariantModel>? variants,
+    double? cogs,
+    List<String>? modifierGroups,
+  }) {
     return ProductModel(
       id: map['id'] as String,
       categoryId: map['category_id'] as String,
@@ -83,6 +90,35 @@ class ProductModel {
       imagePath: map['image_path'] as String?,
       variants: variants ?? [],
       estimatedCogs: cogs,
+      modifierGroups: modifierGroups ?? [],
+    );
+  }
+
+  ProductModel copyWith({
+    String? id,
+    String? categoryId,
+    String? categoryName,
+    String? name,
+    String? description,
+    double? basePrice,
+    bool? isActive,
+    String? imagePath,
+    List<ProductVariantModel>? variants,
+    double? estimatedCogs,
+    List<String>? modifierGroups,
+  }) {
+    return ProductModel(
+      id: id ?? this.id,
+      categoryId: categoryId ?? this.categoryId,
+      categoryName: categoryName ?? this.categoryName,
+      name: name ?? this.name,
+      description: description ?? this.description,
+      basePrice: basePrice ?? this.basePrice,
+      isActive: isActive ?? this.isActive,
+      imagePath: imagePath ?? this.imagePath,
+      variants: variants ?? this.variants,
+      estimatedCogs: estimatedCogs ?? this.estimatedCogs,
+      modifierGroups: modifierGroups ?? this.modifierGroups,
     );
   }
 

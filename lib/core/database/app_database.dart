@@ -60,6 +60,40 @@ class AppDatabase {
         try {
           await db.execute('ALTER TABLE attendance ADD COLUMN photo_path TEXT;');
         } catch (_) {}
+        try {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS modifier_groups (
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL UNIQUE,
+              selection_type TEXT NOT NULL DEFAULT 'SINGLE',
+              is_required INTEGER DEFAULT 0,
+              display_order INTEGER DEFAULT 0
+            );
+          ''');
+        } catch (_) {}
+        try {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS product_modifier_groups (
+              product_id TEXT NOT NULL,
+              group_name TEXT NOT NULL,
+              display_order INTEGER DEFAULT 0,
+              PRIMARY KEY (product_id, group_name),
+              FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE CASCADE
+            );
+          ''');
+        } catch (_) {}
+        try {
+          // Normalisasi nama grup bawaan agar seragam
+          await db.execute("UPDATE modifiers SET group_name = 'Level Gula' WHERE group_name = 'Gula';");
+          await db.execute("UPDATE modifiers SET group_name = 'Level Es Batu' WHERE group_name = 'Es';");
+          await db.execute("UPDATE modifiers SET group_name = 'Topping Tambahan' WHERE group_name = 'Topping';");
+        } catch (_) {}
+        try {
+          // Pastikan grup bawaan terdaftar
+          await db.execute("INSERT OR IGNORE INTO modifier_groups (id, name, selection_type, is_required, display_order) VALUES ('mod_grp_gula', 'Level Gula', 'SINGLE', 1, 1);");
+          await db.execute("INSERT OR IGNORE INTO modifier_groups (id, name, selection_type, is_required, display_order) VALUES ('mod_grp_es', 'Level Es Batu', 'SINGLE', 1, 2);");
+          await db.execute("INSERT OR IGNORE INTO modifier_groups (id, name, selection_type, is_required, display_order) VALUES ('mod_grp_topping', 'Topping Tambahan', 'MULTIPLE', 0, 3);");
+        } catch (_) {}
       },
       onCreate: (db, version) async {
         final batch = db.batch();

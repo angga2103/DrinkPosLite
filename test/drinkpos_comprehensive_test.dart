@@ -6,7 +6,6 @@ import 'package:drinkpos_lite/core/constants/app_constants.dart';
 import 'package:drinkpos_lite/core/database/app_database.dart';
 import 'package:drinkpos_lite/core/database/database_schema.dart';
 import 'package:drinkpos_lite/core/database/seed_data.dart';
-import 'package:drinkpos_lite/core/services/attendance_photo_service.dart';
 import 'package:drinkpos_lite/core/services/excel_report_service.dart';
 import 'package:drinkpos_lite/core/services/pdf_report_service.dart';
 import 'package:drinkpos_lite/core/services/share_service.dart';
@@ -116,6 +115,7 @@ void main() {
         name: 'Es Kopi Karamel',
         description: 'Kopi dengan saus karamel lezat',
         basePrice: 18000,
+        modifierGroups: ['Level Gula', 'Topping Tambahan'],
       );
       final variants = [
         ProductVariantModel(id: 'var_kopi_s', productId: 'prod_kopi_susu', name: 'Regular', price: 18000, isDefault: true),
@@ -128,6 +128,14 @@ void main() {
       expect(loaded, isNotNull);
       expect(loaded!.name, 'Es Kopi Karamel');
       expect(loaded.variants.length, 2);
+      expect(loaded.modifierGroups, contains('Level Gula'));
+      expect(loaded.modifierGroups, contains('Topping Tambahan'));
+      expect(loaded.modifierGroups.contains('Level Es Batu'), isFalse);
+
+      final assignedMods = await productRepo.getModifiersForProduct('prod_kopi_susu');
+      expect(assignedMods.length, 2);
+      expect(assignedMods.any((g) => g.name == 'Level Gula'), isTrue);
+      expect(assignedMods.any((g) => g.name == 'Level Es Batu'), isFalse);
     });
 
     // 2. Membuat bahan baku

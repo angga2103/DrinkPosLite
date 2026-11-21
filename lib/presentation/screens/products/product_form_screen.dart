@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/id_generator.dart';
 import '../../../data/models/category_model.dart';
+import '../../../data/models/modifier_group_model.dart';
 import '../../../data/models/product_model.dart';
 import '../../../data/repositories/product_repository.dart';
+import '../modifiers/modifier_management_screen.dart';
 
 class ProductFormScreen extends StatefulWidget {
   final ProductModel? product;
@@ -25,6 +27,8 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   String? _selectedCategoryId;
   List<CategoryModel> _categories = [];
   List<ProductVariantModel> _variants = [];
+  List<ModifierGroupModel> _allModifierGroups = [];
+  final Set<String> _selectedModifierGroupNames = {};
   bool _isLoading = true;
 
   @override
@@ -36,26 +40,39 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
       text: widget.product?.basePrice.toStringAsFixed(0) ?? '5000',
     );
     _selectedCategoryId = widget.product?.categoryId;
-    _loadCategories();
+    _loadData();
   }
 
-  Future<void> _loadCategories() async {
+  Future<void> _loadData() async {
+    setState(() => _isLoading = true);
     final cats = await _repo.getCategories();
+    final grps = await _repo.getModifierGroups(activeOnly: true);
+
     if (mounted) {
       setState(() {
         _categories = cats;
+        _allModifierGroups = grps;
+
         if (_selectedCategoryId == null && cats.isNotEmpty) {
           _selectedCategoryId = cats.first.id;
         }
 
         if (widget.product != null) {
           _variants = List.from(widget.product!.variants);
+          _selectedModifierGroupNames.clear();
+          _selectedModifierGroupNames.addAll(widget.product!.modifierGroups);
         } else {
           // Default variants
           _variants = [
             ProductVariantModel(id: IdGenerator.generateId(prefix: 'var'), productId: '', name: 'Regular', price: 5000, isDefault: true),
             ProductVariantModel(id: IdGenerator.generateId(prefix: 'var'), productId: '', name: 'Large', price: 7000, isDefault: false),
           ];
+          // Default untuk produk baru: centang grup bawaan jika ada
+          for (final g in grps) {
+            if (g.name == 'Level Gula' || g.name == 'Level Es Batu' || g.name == 'Topping Tambahan') {
+              _selectedModifierGroupNames.add(g.name);
+            }
+          }
         }
         _isLoading = false;
       });
@@ -115,6 +132,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
       description: _descController.text.trim(),
       basePrice: basePrice,
       variants: updatedVariants,
+      modifierGroups: _selectedModifierGroupNames.toList(),
     );
 
     await _repo.saveProduct(product: productToSave, variants: updatedVariants);
@@ -141,76 +159,135 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
+              padding: const EdgeInsets.all(16),
               child: Form(
                 key: _formKey,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Product Name
-                    const Text('Nama Minuman', style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 6),
+                    // Product Information
+                    const Text('Informasi Produk', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 12),
+
                     TextFormField(
                       controller: _nameController,
-                      decoration: const InputDecoration(hintText: 'Contoh: Es Teh Solo Manis'),
-                      validator: (val) => val == null || val.trim().isEmpty ? 'Nama wajib diisi' : null,
+                      decoration: const InputDecoration(labelText: 'Nama Produk *', hintText: 'Contoh: Es Teh Solo'),
+                      validator: (val) => val == null || val.trim().isEmpty ? 'Nama produk wajib diisi' : null,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
 
-                    // Category
-                    const Text('Kategori', style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        border: Border.all(color: AppColors.cardBorder),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: _selectedCategoryId,
-                          isExpanded: true,
-                          items: _categories.map((c) {
-                            return DropdownMenuItem(value: c.id, child: Text(c.name));
-                          }).toList(),
-                          onChanged: (val) => setState(() => _selectedCategoryId = val),
-                        ),
-                      ),
+                    DropdownButtonFormField<String>(
+                      value: _selectedCategoryId,
+                      decoration: const InputDecoration(labelText: 'Kategori Produk *'),
+                      items: _categories.map((c) {
+                        return DropdownMenuItem(value: c.id, child: Text(c.name));
+                      }).toList(),
+                      onChanged: (val) => setState(() => _selectedCategoryId = val),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
 
-                    // Base Price
-                    const Text('Harga Dasar (Rp)', style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 6),
                     TextFormField(
                       controller: _basePriceController,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(prefixText: 'Rp '),
-                      validator: (val) => val == null || val.trim().isEmpty ? 'Harga wajib diisi' : null,
+                      decoration: const InputDecoration(labelText: 'Harga Dasar (Rp) *', prefixText: 'Rp '),
+                      validator: (val) => val == null || val.trim().isEmpty ? 'Harga dasar wajib diisi' : null,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
 
-                    // Description
-                    const Text('Deskripsi (Opsional)', style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 6),
                     TextFormField(
                       controller: _descController,
                       maxLines: 2,
-                      decoration: const InputDecoration(hintText: 'Keterangan rasa atau keunggulan menu'),
+                      decoration: const InputDecoration(
+                        labelText: 'Deskripsi Produk (Opsional)',
+                        hintText: 'Penjelasan rasa, isi, atau catatan resep',
+                      ),
                     ),
                     const SizedBox(height: 24),
 
-                    // Variants section
+                    // Level & Topping Section (Custom per product)
+                    Card(
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Expanded(
+                                  child: Text(
+                                    'Pilihan Level & Topping Produk',
+                                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                                TextButton.icon(
+                                  icon: const Icon(Icons.tune, size: 16),
+                                  label: const Text('Kelola Master', style: TextStyle(fontSize: 12)),
+                                  onPressed: () async {
+                                    await Navigator.of(context).push(
+                                      MaterialPageRoute(builder: (_) => const ModifierManagementScreen()),
+                                    );
+                                    _loadData();
+                                  },
+                                ),
+                              ],
+                            ),
+                            const Text(
+                              'Centang jenis level atau topping yang ingin dimunculkan saat kasir memilih produk ini. Jika tidak dicentang, produk akan dipesan langsung tanpa opsi level/topping.',
+                              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                            ),
+                            const SizedBox(height: 12),
+                            if (_allModifierGroups.isEmpty)
+                              const Text('Belum ada master level/topping.', style: TextStyle(fontSize: 12, color: AppColors.textSecondary))
+                            else
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: _allModifierGroups.map((grp) {
+                                  final isSelected = _selectedModifierGroupNames.contains(grp.name);
+                                  return FilterChip(
+                                    avatar: Icon(
+                                      grp.isSingleChoice ? Icons.radio_button_checked : Icons.check_box,
+                                      size: 16,
+                                      color: isSelected ? AppColors.primary : Colors.grey,
+                                    ),
+                                    label: Text('${grp.name} (${grp.options.length} opsi)'),
+                                    selected: isSelected,
+                                    selectedColor: AppColors.primaryContainer,
+                                    labelStyle: TextStyle(
+                                      color: isSelected ? AppColors.primary : AppColors.textPrimary,
+                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                    ),
+                                    onSelected: (selected) {
+                                      setState(() {
+                                        if (selected) {
+                                          _selectedModifierGroupNames.add(grp.name);
+                                        } else {
+                                          _selectedModifierGroupNames.remove(grp.name);
+                                        }
+                                      });
+                                    },
+                                  );
+                                }).toList(),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Variant Setup
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
-                          'Varian Ukuran & Harga',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                        ),
+                        const Text('Ukuran / Varian Produk', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                         TextButton.icon(
-                          icon: const Icon(Icons.add, size: 16),
+                          icon: const Icon(Icons.add, size: 18),
                           label: const Text('Tambah Varian'),
                           onPressed: _addVariant,
                         ),
@@ -226,7 +303,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                       itemBuilder: (context, index) {
                         final v = _variants[index];
                         return Card(
-                          margin: EdgeInsets.zero,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           child: Padding(
                             padding: const EdgeInsets.all(12),
                             child: Row(

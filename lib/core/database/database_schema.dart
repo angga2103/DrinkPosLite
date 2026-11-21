@@ -76,17 +76,39 @@ class DatabaseSchema {
     );
     ''',
 
-    // 6. Modifiers (Sugar, Ice, Toppings)
+    // 6. Modifiers (Sugar, Ice, Toppings, etc.)
     '''
     CREATE TABLE IF NOT EXISTS modifiers (
       id TEXT PRIMARY KEY,
-      group_name TEXT NOT NULL, -- Gula, Es, Topping
+      group_name TEXT NOT NULL, -- Level Gula, Level Es Batu, Topping Tambahan, or custom
       name TEXT NOT NULL, -- Normal, Sedikit, Boba, etc.
       extra_price REAL DEFAULT 0,
       ingredient_id TEXT,
       ingredient_amount REAL DEFAULT 0,
       is_active INTEGER DEFAULT 1,
       FOREIGN KEY (ingredient_id) REFERENCES ingredients (id) ON DELETE SET NULL
+    );
+    ''',
+
+    // 6.1 Modifier Groups (Level & Topping Groups)
+    '''
+    CREATE TABLE IF NOT EXISTS modifier_groups (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      selection_type TEXT NOT NULL DEFAULT 'SINGLE', -- 'SINGLE' (pilih satu) or 'MULTIPLE' (bisa pilih banyak)
+      is_required INTEGER DEFAULT 0,
+      display_order INTEGER DEFAULT 0
+    );
+    ''',
+
+    // 6.2 Product Modifier Groups (Relasi Produk dengan Group Level/Topping yang Aktif)
+    '''
+    CREATE TABLE IF NOT EXISTS product_modifier_groups (
+      product_id TEXT NOT NULL,
+      group_name TEXT NOT NULL,
+      display_order INTEGER DEFAULT 0,
+      PRIMARY KEY (product_id, group_name),
+      FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE CASCADE
     );
     ''',
 

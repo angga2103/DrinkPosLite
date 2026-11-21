@@ -1,7 +1,9 @@
 import 'package:sqflite/sqflite.dart';
 import '../../core/database/app_database.dart';
 import '../../core/security/audit_logger.dart';
+import '../../core/utils/id_generator.dart';
 import '../models/category_model.dart';
+import '../models/modifier_group_model.dart';
 import '../models/modifier_model.dart';
 import '../models/product_model.dart';
 
@@ -92,7 +94,16 @@ class ProductRepository {
         }
       }
 
-      products.add(ProductModel.fromMap(row, variants: variants, cogs: estimatedCogs));
+      // Get assigned modifier groups for product
+      final grpRows = await db.query(
+        'product_modifier_groups',
+        where: 'product_id = ?',
+        whereArgs: [pId],
+        orderBy: 'display_order ASC',
+      );
+      final modifierGroups = grpRows.map((r) => r['group_name'] as String).toList();
+
+      products.add(ProductModel.fromMap(row, variants: variants, cogs: estimatedCogs, modifierGroups: modifierGroups));
     }
 
     return products;
@@ -115,7 +126,16 @@ class ProductRepository {
       orderBy: 'price ASC',
     );
     final variants = variantRows.map((v) => ProductVariantModel.fromMap(v)).toList();
-    return ProductModel.fromMap(res.first, variants: variants);
+
+    final grpRows = await db.query(
+      'product_modifier_groups',
+      where: 'product_id = ?',
+      whereArgs: [id],
+      orderBy: 'display_order ASC',
+    );
+    final modifierGroups = grpRows.map((r) => r['group_name'] as String).toList();
+
+    return ProductModel.fromMap(res.first, variants: variants, modifierGroups: modifierGroups);
   }
 
   Future<void> saveProduct({
@@ -163,6 +183,16 @@ class ProductRepository {
         );
       }
 
+      // Save assigned modifier groups
+      await txn.delete('product_modifier_groups', where: 'product_id = ?', whereArgs: [product.id]);
+      for (int i = 0; i < product.modifierGroups.length; i++) {
+        await txn.insert('product_modifier_groups', {
+          'product_id': product.id,
+          'group_name': product.modifierGroups[i],
+          'display_order': i + 1,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+
       await AuditLogger.log(
         action: existing.isEmpty ? 'PRODUCT_CREATE' : 'PRODUCT_UPDATE',
         entityType: 'PRODUCT',
@@ -178,6 +208,7 @@ class ProductRepository {
     final db = await _appDb.database;
     await db.transaction((txn) async {
       await txn.delete('product_variants', where: 'product_id = ?', whereArgs: [id]);
+      await txn.delete('product_modifier_groups', where: 'product_id = ?', whereArgs: [id]);
       await txn.delete('products', where: 'id = ?', whereArgs: [id]);
       await AuditLogger.log(
         action: 'PRODUCT_DELETE',
@@ -190,7 +221,67 @@ class ProductRepository {
     });
   }
 
-  // Modifiers (Sugar, Ice, Toppings)
+  // Modifiers & Modifier Groups
+  Future<List<ModifierGroupModel>> getModifierGroups({bool activeOnly = true}) async {
+    final db = await _appDb.database;
+    final groupRows = await db.query('modifier_groups', orderBy: 'display_order ASC, name ASC');
+
+    if (groupRows.isEmpty) {
+      final defaultGroups = [
+        ModifierGroupModel(id: 'mod_grp_gula', name: 'Level Gula', selectionType: 'SINGLE', isRequired: true, displayOrder: 1),
+        ModifierGroupModel(id: 'mod_grp_es', name: 'Level Es Batu', selectionType: 'SINGLE', isRequired: true, displayOrder: 2),
+        ModifierGroupModel(id: 'mod_grp_topping', name: 'Topping Tambahan', selectionType: 'MULTIPLE', isRequired: false, displayOrder: 3),
+      ];
+      for (final g in defaultGroups) {
+        await db.insert('modifier_groups', g.toMap(), conflictAlgorithm: ConflictAlgorithm.ignore);
+      }
+      return getModifierGroups(activeOnly: activeOnly);
+    }
+
+    final List<ModifierGroupModel> result = [];
+    for (final row in groupRows) {
+      final grpName = row['name'] as String;
+      final optRows = await db.query(
+        'modifiers',
+        where: activeOnly ? 'group_name = ? AND is_active = 1' : 'group_name = ?',
+        whereArgs: [grpName],
+        orderBy: 'extra_price ASC, name ASC',
+      );
+      final options = optRows.map((m) => ModifierModel.fromMap(m)).toList();
+      result.add(ModifierGroupModel.fromMap(row, options: options));
+    }
+    return result;
+  }
+
+  Future<List<ModifierGroupModel>> getModifiersForProduct(String productId) async {
+    final db = await _appDb.database;
+    final grpRows = await db.query(
+      'product_modifier_groups',
+      where: 'product_id = ?',
+      whereArgs: [productId],
+      orderBy: 'display_order ASC',
+    );
+    if (grpRows.isEmpty) return [];
+
+    final assignedNames = grpRows.map((r) => r['group_name'] as String).toSet();
+    final allGroups = await getModifierGroups(activeOnly: true);
+    return allGroups.where((g) => assignedNames.contains(g.name)).toList();
+  }
+
+  Future<void> saveModifierGroup(ModifierGroupModel group) async {
+    final db = await _appDb.database;
+    await db.insert('modifier_groups', group.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> deleteModifierGroup(String groupName) async {
+    final db = await _appDb.database;
+    await db.transaction((txn) async {
+      await txn.delete('modifier_groups', where: 'name = ?', whereArgs: [groupName]);
+      await txn.delete('modifiers', where: 'group_name = ?', whereArgs: [groupName]);
+      await txn.delete('product_modifier_groups', where: 'group_name = ?', whereArgs: [groupName]);
+    });
+  }
+
   Future<List<ModifierModel>> getModifiers({String? groupName, bool activeOnly = true}) async {
     final db = await _appDb.database;
     String? where;
@@ -213,6 +304,18 @@ class ProductRepository {
   Future<void> saveModifier(ModifierModel modifier) async {
     final db = await _appDb.database;
     await db.insert('modifiers', modifier.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    // Ensure the group exists in modifier_groups
+    final grpExists = await db.query('modifier_groups', where: 'name = ?', whereArgs: [modifier.groupName]);
+    if (grpExists.isEmpty) {
+      final isMulti = modifier.groupName.toLowerCase().contains('topping') || modifier.groupName.toLowerCase().contains('ekstra');
+      await db.insert('modifier_groups', {
+        'id': IdGenerator.generateId(prefix: 'grp'),
+        'name': modifier.groupName,
+        'selection_type': isMulti ? 'MULTIPLE' : 'SINGLE',
+        'is_required': 0,
+        'display_order': 99,
+      });
+    }
   }
 
   Future<void> deleteModifier(String id) async {
