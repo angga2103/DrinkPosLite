@@ -261,5 +261,15 @@ class SeedData {
       'reason': 'Inisialisasi sistem DrinkPOS Lite awal',
       'created_at': now,
     });
+
+    // 10. Default Customer
+    await db.insert('customers', {
+      'id': 'cust_default',
+      'name': 'Umum (Default)',
+      'phone': '',
+      'stamps': 0,
+      'total_visits': 0,
+      'created_at': now,
+    });
   }
 }

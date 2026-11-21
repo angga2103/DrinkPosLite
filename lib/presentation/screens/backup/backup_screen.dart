@@ -76,6 +76,27 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
     }
   }
 
+  Future<void> _createBackupAndShare() async {
+    setState(() => _isProcessing = true);
+    final user = ref.read(authProvider).currentUser;
+
+    final result = await BackupService.createBackup(
+      backupType: 'MANUAL',
+      userId: user?.id,
+    );
+
+    setState(() => _isProcessing = false);
+
+    if (result.success && mounted && result.filePath != null && result.fileName != null) {
+      await BackupService.shareBackupFile(result.filePath!, result.fileName!);
+      _loadHistory();
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.errorMessage ?? 'Gagal membuat backup'), backgroundColor: AppColors.danger),
+      );
+    }
+  }
+
   Future<void> _restoreBackup() async {
     final user = ref.read(authProvider).currentUser;
     if (user == null || !user.isOwner) {
@@ -210,6 +231,19 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
                                 ),
                               ),
                             ],
+                          ),
+                          const SizedBox(height: 10),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.share, color: Colors.green),
+                              label: const Text('Cadangkan & Bagikan ke WhatsApp / Drive', style: TextStyle(color: Colors.green)),
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(color: Colors.green),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                              ),
+                              onPressed: _isProcessing ? null : _createBackupAndShare,
+                            ),
                           ),
                         ],
                       ),

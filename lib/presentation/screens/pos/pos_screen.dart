@@ -7,8 +7,12 @@ import '../../../core/services/share_service.dart';
 import '../../../core/services/sync_package_service.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../../../data/models/category_model.dart';
+import '../../../data/models/customer_model.dart';
+import '../../../data/models/ingredient_model.dart';
 import '../../../data/models/product_model.dart';
 import '../../../data/models/promotion_model.dart';
+import '../../../data/repositories/customer_repository.dart';
+import '../../../data/repositories/ingredient_repository.dart';
 import '../../../data/repositories/pos_repository.dart';
 import '../../../data/repositories/product_repository.dart';
 import '../../../data/repositories/report_repository.dart';
@@ -38,6 +42,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
 
   List<CategoryModel> _categories = [];
   List<ProductModel> _products = [];
+  List<IngredientModel> _lowStockIngredients = [];
   String _selectedCategoryId = 'ALL';
   String _searchQuery = '';
   bool _isLoading = true;
@@ -124,11 +129,13 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       categoryId: _selectedCategoryId == 'ALL' ? null : _selectedCategoryId,
       query: _searchQuery,
     );
+    final lowIngs = await IngredientRepository().getLowStockIngredients();
 
     if (mounted) {
       setState(() {
         _categories = cats;
         _products = prods;
+        _lowStockIngredients = lowIngs;
         _isLoading = false;
       });
     }
@@ -260,6 +267,9 @@ class _PosScreenState extends ConsumerState<PosScreen> {
         cashReceived: paymentResult.cashReceived,
         qrisAmount: paymentResult.qrisAmount,
         changeAmount: paymentResult.changeAmount,
+        customerId: cart.selectedCustomer?.id,
+        customerName: cart.selectedCustomer?.name,
+        customerPhone: cart.selectedCustomer?.phone,
       );
 
       // Clear cart & refresh metrics
@@ -285,6 +295,49 @@ class _PosScreenState extends ConsumerState<PosScreen> {
     }
   }
 
+  void _showCustomerPicker() async {
+    final customerRepo = CustomerRepository();
+    final customers = await customerRepo.getCustomers();
+    if (!mounted) return;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _CustomerPickerModal(
+        initialCustomers: customers,
+        onCustomerSelected: (cust) {
+          ref.read(cartProvider.notifier).setCustomer(cust);
+          Navigator.of(ctx).pop();
+        },
+      ),
+    );
+  }
+
+  void _showParkedOrdersModal() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => const _ParkedOrdersBottomSheet(),
+    );
+  }
+
+  void _showLowStockModal() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _LowStockBottomSheet(
+        ingredients: _lowStockIngredients,
+        onRestocked: () {
+          _loadData();
+          ref.read(dashboardProvider.notifier).loadMetrics();
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final cart = ref.watch(cartProvider);
@@ -295,6 +348,26 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       title: 'Mulai Jualan (Kasir)',
       currentRoute: '/pos',
       actions: [
+        if (cart.parkedOrders.isNotEmpty)
+          IconButton(
+            icon: Badge(
+              label: Text('${cart.parkedOrders.length}'),
+              backgroundColor: AppColors.secondary,
+              child: const Icon(Icons.pause_circle_filled, size: 22, color: AppColors.secondary),
+            ),
+            tooltip: 'Antrean Ditahan (${cart.parkedOrders.length})',
+            onPressed: _showParkedOrdersModal,
+          ),
+        if (_lowStockIngredients.isNotEmpty)
+          IconButton(
+            icon: Badge(
+              label: Text('${_lowStockIngredients.length}'),
+              backgroundColor: AppColors.danger,
+              child: const Icon(Icons.warning_amber_rounded, size: 22, color: AppColors.danger),
+            ),
+            tooltip: '${_lowStockIngredients.length} Bahan Baku Menipis',
+            onPressed: _showLowStockModal,
+          ),
         IconButton(
           icon: const Icon(Icons.print_outlined, size: 20),
           tooltip: 'Pengaturan Printer Bluetooth',
@@ -347,6 +420,79 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                     child: const Text('Buka Shift', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                   ),
                 ],
+              ),
+            ),
+
+          // Customer & Loyalty Bar
+          Container(
+            color: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                const Icon(Icons.person_pin, size: 22, color: AppColors.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Pelanggan:', style: TextStyle(fontSize: 10, color: AppColors.textSecondary)),
+                      Text(
+                        cart.selectedCustomer?.name ?? 'Umum (Default)',
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                if (cart.selectedCustomer != null && cart.selectedCustomer!.stamps > 0) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryContainer,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '${cart.selectedCustomer!.stamps % 10}/10 ⭐',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.primary),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.swap_horiz, size: 14),
+                  label: const Text('Pilih', style: TextStyle(fontSize: 11)),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  onPressed: _showCustomerPicker,
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+
+          // Low Stock Alert Banner (if any)
+          if (_lowStockIngredients.isNotEmpty)
+            InkWell(
+              onTap: _showLowStockModal,
+              child: Container(
+                color: AppColors.warningContainer,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded, size: 16, color: AppColors.warning),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Peringatan: ${_lowStockIngredients.length} bahan baku menipis! Ketuk untuk restok.',
+                        style: const TextStyle(fontSize: 11, color: AppColors.textPrimary, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    const Icon(Icons.arrow_forward_ios, size: 10, color: AppColors.textSecondary),
+                  ],
+                ),
               ),
             ),
           // Search & Category Filters
@@ -531,6 +677,31 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                       ),
                     ),
 
+                    // Hold Order Button
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.pause, size: 16),
+                      label: const Text('Tahan'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.secondary,
+                        side: const BorderSide(color: AppColors.secondary),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onPressed: () {
+                        final success = ref.read(cartProvider.notifier).parkCurrentOrder();
+                        if (success && mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Pesanan berhasil ditahan ke daftar antrean.'),
+                              backgroundColor: AppColors.secondary,
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                    const SizedBox(width: 8),
+
                     // Checkout / Pay Button
                     ElevatedButton.icon(
                       icon: const Icon(Icons.payment, size: 18),
@@ -613,12 +784,27 @@ class _CartBottomSheetContent extends ConsumerWidget {
                 'Keranjang Belanja (${cart.totalItemCount} Cup)',
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
-              TextButton(
-                onPressed: () {
-                  ref.read(cartProvider.notifier).clearCart();
-                  Navigator.of(context).pop();
-                },
-                child: const Text('Kosongkan', style: TextStyle(color: AppColors.danger)),
+              Row(
+                children: [
+                  TextButton.icon(
+                    icon: const Icon(Icons.pause_circle_outline, size: 16, color: AppColors.secondary),
+                    label: const Text('Tahan', style: TextStyle(color: AppColors.secondary)),
+                    onPressed: () {
+                      ref.read(cartProvider.notifier).parkCurrentOrder();
+                      Navigator.of(context).pop();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Pesanan berhasil ditahan ke antrean!'), backgroundColor: AppColors.secondary),
+                      );
+                    },
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      ref.read(cartProvider.notifier).clearCart();
+                      Navigator.of(context).pop();
+                    },
+                    child: const Text('Kosongkan', style: TextStyle(color: AppColors.danger)),
+                  ),
+                ],
               ),
             ],
           ),
@@ -794,6 +980,429 @@ class _CartBottomSheetContent extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// Modal to pick or create customer
+class _CustomerPickerModal extends StatefulWidget {
+  final List<CustomerModel> initialCustomers;
+  final ValueChanged<CustomerModel> onCustomerSelected;
+
+  const _CustomerPickerModal({
+    required this.initialCustomers,
+    required this.onCustomerSelected,
+  });
+
+  @override
+  State<_CustomerPickerModal> createState() => _CustomerPickerModalState();
+}
+
+class _CustomerPickerModalState extends State<_CustomerPickerModal> {
+  final CustomerRepository _repo = CustomerRepository();
+  late List<CustomerModel> _customers;
+  final TextEditingController _searchCtrl = TextEditingController();
+  final TextEditingController _nameCtrl = TextEditingController();
+  final TextEditingController _phoneCtrl = TextEditingController();
+  bool _isCreating = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _customers = widget.initialCustomers;
+  }
+
+  Future<void> _filter(String query) async {
+    final list = await _repo.getCustomers(query: query);
+    setState(() => _customers = list);
+  }
+
+  Future<void> _saveNewCustomer() async {
+    if (_nameCtrl.text.trim().isEmpty) return;
+    final created = await _repo.saveCustomer(
+      name: _nameCtrl.text.trim(),
+      phone: _phoneCtrl.text.trim(),
+    );
+    widget.onCustomerSelected(created);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: EdgeInsets.only(
+        top: 16,
+        left: 20,
+        right: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+      ),
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.8,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Pilih Pelanggan & Loyalty', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              IconButton(
+                icon: Icon(_isCreating ? Icons.list : Icons.person_add_alt_1),
+                tooltip: _isCreating ? 'Daftar Pelanggan' : 'Tambah Baru',
+                onPressed: () => setState(() => _isCreating = !_isCreating),
+              ),
+            ],
+          ),
+          const Divider(),
+          if (_isCreating) ...[
+            const Text('Tambah Pelanggan Baru', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _nameCtrl,
+              decoration: const InputDecoration(labelText: 'Nama Pelanggan *', prefixIcon: Icon(Icons.person)),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _phoneCtrl,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(labelText: 'No. WhatsApp / HP', prefixIcon: Icon(Icons.phone)),
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.check),
+                label: const Text('Simpan & Pilih'),
+                onPressed: _saveNewCustomer,
+              ),
+            ),
+          ] else ...[
+            TextField(
+              controller: _searchCtrl,
+              decoration: const InputDecoration(
+                hintText: 'Cari nama atau nomor HP...',
+                prefixIcon: Icon(Icons.search, size: 20),
+                contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              ),
+              onChanged: _filter,
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: ListView.separated(
+                itemCount: _customers.length,
+                separatorBuilder: (_, __) => const Divider(height: 1),
+                itemBuilder: (ctx, idx) {
+                  final c = _customers[idx];
+                  return ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: c.id == 'cust_default' ? AppColors.divider : AppColors.primaryContainer,
+                      child: Icon(
+                        c.id == 'cust_default' ? Icons.people_outline : Icons.person,
+                        color: c.id == 'cust_default' ? AppColors.textSecondary : AppColors.primary,
+                        size: 20,
+                      ),
+                    ),
+                    title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    subtitle: c.phone != null && c.phone!.isNotEmpty ? Text('WA: ${c.phone}', style: const TextStyle(fontSize: 11)) : null,
+                    trailing: c.id != 'cust_default'
+                        ? Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppColors.primaryContainer,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '${c.stamps % 10}/10 ⭐',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: AppColors.primary),
+                            ),
+                          )
+                        : null,
+                    onTap: () => widget.onCustomerSelected(c),
+                  );
+                },
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// Modal for Parked / Held Orders
+class _ParkedOrdersBottomSheet extends ConsumerWidget {
+  const _ParkedOrdersBottomSheet();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cart = ref.watch(cartProvider);
+    final parkedList = cart.parkedOrders;
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Daftar Antrean Ditahan (${parkedList.length})', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.of(context).pop()),
+            ],
+          ),
+          const Divider(),
+          Expanded(
+            child: parkedList.isEmpty
+                ? const Center(child: Text('Tidak ada antrean yang ditahan'))
+                : ListView.separated(
+                    itemCount: parkedList.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (ctx, idx) {
+                      final order = parkedList[idx];
+                      return ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: AppColors.secondaryContainer,
+                          child: const Icon(Icons.pause, color: AppColors.secondary, size: 20),
+                        ),
+                        title: Text(order.label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                        subtitle: Text(
+                          '${order.totalItemCount} Cup • ${CurrencyFormatter.format(order.subtotal)}',
+                          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.primary,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              onPressed: () {
+                                ref.read(cartProvider.notifier).recallParkedOrder(order.id);
+                                Navigator.of(context).pop();
+                              },
+                              child: const Text('Panggil', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, size: 20, color: AppColors.danger),
+                              onPressed: () {
+                                ref.read(cartProvider.notifier).deleteParkedOrder(order.id);
+                              },
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Modal for Low Stock Alert and Quick Restock
+class _LowStockBottomSheet extends StatelessWidget {
+  final List<IngredientModel> ingredients;
+  final VoidCallback onRestocked;
+
+  const _LowStockBottomSheet({
+    required this.ingredients,
+    required this.onRestocked,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.warning_amber_rounded, color: AppColors.danger, size: 20),
+                  const SizedBox(width: 8),
+                  Text('Bahan Baku Menipis (${ingredients.length})', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                ],
+              ),
+              IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.of(context).pop()),
+            ],
+          ),
+          const Divider(),
+          Expanded(
+            child: ingredients.isEmpty
+                ? const Center(child: Text('Semua stok bahan baku aman'))
+                : ListView.separated(
+                    itemCount: ingredients.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (ctx, idx) {
+                      final ing = ingredients[idx];
+                      return ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: AppColors.dangerContainer,
+                          child: const Icon(Icons.inventory_2_outlined, color: AppColors.danger, size: 20),
+                        ),
+                        title: Text(ing.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                        subtitle: Text(
+                          'Sisa: ${ing.currentStock.toStringAsFixed(1)} ${ing.unit} (Min: ${ing.minimumStock.toStringAsFixed(1)})',
+                          style: const TextStyle(fontSize: 11, color: AppColors.danger),
+                        ),
+                        trailing: ElevatedButton.icon(
+                          icon: const Icon(Icons.add, size: 14),
+                          label: const Text('Restok', style: TextStyle(fontSize: 11)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          onPressed: () async {
+                            final success = await showDialog<bool>(
+                              context: context,
+                              builder: (_) => _QuickRestockDialog(ingredient: ing),
+                            );
+                            if (success == true) {
+                              onRestocked();
+                              Navigator.of(context).pop();
+                            }
+                          },
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Dialog for 1-Click Quick Restock
+class _QuickRestockDialog extends StatefulWidget {
+  final IngredientModel ingredient;
+
+  const _QuickRestockDialog({required this.ingredient});
+
+  @override
+  State<_QuickRestockDialog> createState() => _QuickRestockDialogState();
+}
+
+class _QuickRestockDialogState extends State<_QuickRestockDialog> {
+  final TextEditingController _qtyCtrl = TextEditingController(text: '10');
+  bool _isSaving = false;
+
+  Future<void> _doRestock() async {
+    final qty = double.tryParse(_qtyCtrl.text.replaceAll(',', '.')) ?? 0;
+    if (qty <= 0) return;
+
+    setState(() => _isSaving = true);
+    try {
+      await IngredientRepository().quickRestock(
+        ingredientId: widget.ingredient.id,
+        addedQuantity: qty,
+      );
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isSaving = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal restok: $e'), backgroundColor: AppColors.danger));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Text('Restok Cepat: ${widget.ingredient.name}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Sisa stok saat ini: ${widget.ingredient.currentStock.toStringAsFixed(1)} ${widget.ingredient.unit}',
+            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _qtyCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            autofocus: true,
+            decoration: InputDecoration(
+              labelText: 'Jumlah Ditambahkan (${widget.ingredient.unit})',
+              suffixText: widget.ingredient.unit,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 6,
+            children: [
+              _chip('+1', 1),
+              _chip('+5', 5),
+              _chip('+10', 10),
+              _chip('+50', 50),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Batal')),
+        ElevatedButton(
+          onPressed: _isSaving ? null : _doRestock,
+          child: _isSaving ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Simpan'),
+        ),
+      ],
+    );
+  }
+
+  Widget _chip(String label, double add) {
+    return ActionChip(
+      label: Text(label, style: const TextStyle(fontSize: 11)),
+      onPressed: () {
+        final cur = double.tryParse(_qtyCtrl.text.replaceAll(',', '.')) ?? 0;
+        setState(() => _qtyCtrl.text = (cur + add).toStringAsFixed(0));
+      },
     );
   }
 }

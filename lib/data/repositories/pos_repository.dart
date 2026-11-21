@@ -31,6 +31,10 @@ class PosRepository {
     double cashReceived = 0.0,
     double qrisAmount = 0.0,
     double changeAmount = 0.0,
+    int? queueNumber,
+    String? customerId,
+    String? customerName,
+    String? customerPhone,
     String? notes,
   }) async {
     final db = await _appDb.database;
@@ -248,6 +252,43 @@ class PosRepository {
 
       final grossProfit = finalAmount - calculatedTotalCogs;
 
+      // Calculate Daily Queue Number
+      int effectiveQueueNumber = queueNumber ?? 1;
+      if (queueNumber == null) {
+        final todayPrefix = now.substring(0, 10);
+        final qRows = await txn.rawQuery(
+          "SELECT MAX(queue_number) as max_q FROM transactions WHERE created_at LIKE ?",
+          ['$todayPrefix%'],
+        );
+        if (qRows.isNotEmpty && qRows.first['max_q'] != null) {
+          effectiveQueueNumber = ((qRows.first['max_q'] as num).toInt()) + 1;
+        }
+      }
+
+      // Process Loyalty Stamps if customer selected
+      int earnedStamps = 0;
+      int currentTotalStamps = 0;
+      if (customerId != null && customerId.isNotEmpty && customerId != 'cust_default') {
+        final custRows = await txn.query('customers', where: 'id = ?', whereArgs: [customerId]);
+        if (custRows.isNotEmpty) {
+          final oldStamps = (custRows.first['stamps'] as num? ?? 0).toInt();
+          final oldVisits = (custRows.first['total_visits'] as num? ?? 0).toInt();
+          final totalCups = processedItems.fold(0, (sum, i) => sum + i.quantity);
+          earnedStamps = totalCups > 0 ? totalCups : 1;
+          currentTotalStamps = oldStamps + earnedStamps;
+
+          await txn.update(
+            'customers',
+            {
+              'stamps': currentTotalStamps,
+              'total_visits': oldVisits + 1,
+            },
+            where: 'id = ?',
+            whereArgs: [customerId],
+          );
+        }
+      }
+
       // 2. Insert into transactions table
       final trx = TransactionModel(
         id: trxId,
@@ -266,6 +307,12 @@ class PosRepository {
         qrisAmount: qrisAmount,
         changeAmount: changeAmount,
         status: AppConstants.statusCompleted,
+        queueNumber: effectiveQueueNumber,
+        customerId: customerId,
+        customerName: customerName,
+        customerPhone: customerPhone,
+        stampsEarned: earnedStamps,
+        currentStamps: currentTotalStamps,
         notes: notes,
         createdAt: now,
         items: processedItems,

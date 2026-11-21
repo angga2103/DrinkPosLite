@@ -170,6 +170,12 @@ class TransactionModel {
   final double qrisAmount;
   final double changeAmount;
   final String status; // 'SELESAI', 'DIBATALKAN'
+  final int queueNumber;
+  final String? customerId;
+  final String? customerName;
+  final String? customerPhone;
+  final int stampsEarned;
+  final int currentStamps;
   final String? notes;
   final String createdAt;
   final String? cancelledAt;
@@ -196,6 +202,12 @@ class TransactionModel {
     this.qrisAmount = 0.0,
     this.changeAmount = 0.0,
     this.status = 'SELESAI',
+    this.queueNumber = 1,
+    this.customerId,
+    this.customerName,
+    this.customerPhone,
+    this.stampsEarned = 0,
+    this.currentStamps = 0,
     this.notes,
     required this.createdAt,
     this.cancelledAt,
@@ -231,6 +243,12 @@ class TransactionModel {
       qrisAmount: (map['qris_amount'] as num? ?? 0.0).toDouble(),
       changeAmount: (map['change_amount'] as num? ?? 0.0).toDouble(),
       status: map['status'] as String? ?? 'SELESAI',
+      queueNumber: (map['queue_number'] as num? ?? 1).toInt(),
+      customerId: map['customer_id'] as String?,
+      customerName: map['customer_name'] as String?,
+      customerPhone: map['customer_phone'] as String?,
+      stampsEarned: (map['stamps_earned'] as num? ?? 0).toInt(),
+      currentStamps: (map['current_stamps'] as num? ?? 0).toInt(),
       notes: map['notes'] as String?,
       createdAt: map['created_at'] as String,
       cancelledAt: map['cancelled_at'] as String?,
@@ -260,6 +278,12 @@ class TransactionModel {
       'qris_amount': qrisAmount,
       'change_amount': changeAmount,
       'status': status,
+      'queue_number': queueNumber,
+      'customer_id': customerId,
+      'customer_name': customerName,
+      'customer_phone': customerPhone,
+      'stamps_earned': stampsEarned,
+      'current_stamps': currentStamps,
       'notes': notes,
       'created_at': createdAt,
       'cancelled_at': cancelledAt,

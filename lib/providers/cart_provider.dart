@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/legacy.dart';
+import '../data/models/customer_model.dart';
 import '../data/models/promotion_model.dart';
 import '../data/models/transaction_model.dart';
 
@@ -66,13 +67,38 @@ class CartItem {
   }
 }
 
+class ParkedOrder {
+  final String id;
+  final String label;
+  final DateTime createdAt;
+  final List<CartItem> items;
+  final PromotionModel? selectedPromotion;
+  final CustomerModel? selectedCustomer;
+
+  ParkedOrder({
+    required this.id,
+    required this.label,
+    required this.createdAt,
+    required this.items,
+    this.selectedPromotion,
+    this.selectedCustomer,
+  });
+
+  int get totalItemCount => items.fold(0, (sum, i) => sum + i.quantity);
+  double get subtotal => items.fold(0.0, (sum, i) => sum + i.subtotal);
+}
+
 class CartState {
   final List<CartItem> items;
   final PromotionModel? selectedPromotion;
+  final CustomerModel? selectedCustomer;
+  final List<ParkedOrder> parkedOrders;
 
   CartState({
     this.items = const [],
     this.selectedPromotion,
+    this.selectedCustomer,
+    this.parkedOrders = const [],
   });
 
   int get totalItemCount => items.fold(0, (sum, i) => sum + i.quantity);
@@ -95,16 +121,25 @@ class CartState {
     List<CartItem>? items,
     PromotionModel? selectedPromotion,
     bool clearPromotion = false,
+    CustomerModel? selectedCustomer,
+    bool clearCustomer = false,
+    List<ParkedOrder>? parkedOrders,
   }) {
     return CartState(
       items: items ?? this.items,
       selectedPromotion: clearPromotion ? null : (selectedPromotion ?? this.selectedPromotion),
+      selectedCustomer: clearCustomer ? null : (selectedCustomer ?? this.selectedCustomer),
+      parkedOrders: parkedOrders ?? this.parkedOrders,
     );
   }
 }
 
 class CartNotifier extends StateNotifier<CartState> {
   CartNotifier() : super(CartState());
+
+  void setCustomer(CustomerModel? customer) {
+    state = state.copyWith(selectedCustomer: customer, clearCustomer: customer == null);
+  }
 
   void addItem(CartItem newItem) {
     // Check if identical item (same product, variant, modifiers, and notes) already in cart
@@ -152,7 +187,11 @@ class CartNotifier extends StateNotifier<CartState> {
   }
 
   void clearCart() {
-    state = CartState();
+    state = state.copyWith(
+      items: [],
+      clearPromotion: true,
+      clearCustomer: true,
+    );
   }
 
   void applyPromotion(PromotionModel promotion) {
@@ -161,6 +200,59 @@ class CartNotifier extends StateNotifier<CartState> {
 
   void removePromotion() {
     state = state.copyWith(clearPromotion: true);
+  }
+
+  // Hold / Park current order
+  bool parkCurrentOrder({String? label}) {
+    if (state.items.isEmpty) return false;
+
+    final now = DateTime.now();
+    final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+    final custName = state.selectedCustomer?.name ?? '';
+    final defaultLabel = custName.isNotEmpty && custName != 'Umum (Default)'
+        ? '$custName ($timeStr)'
+        : 'Antrean #${state.parkedOrders.length + 1} ($timeStr)';
+
+    final newParked = ParkedOrder(
+      id: 'park_${now.millisecondsSinceEpoch}',
+      label: label?.trim().isNotEmpty == true ? label!.trim() : defaultLabel,
+      createdAt: now,
+      items: List.from(state.items),
+      selectedPromotion: state.selectedPromotion,
+      selectedCustomer: state.selectedCustomer,
+    );
+
+    state = state.copyWith(
+      items: [],
+      clearPromotion: true,
+      clearCustomer: true,
+      parkedOrders: [...state.parkedOrders, newParked],
+    );
+    return true;
+  }
+
+  // Recall parked order back into active cart
+  bool recallParkedOrder(String id) {
+    final index = state.parkedOrders.indexWhere((o) => o.id == id);
+    if (index < 0) return false;
+
+    final parked = state.parkedOrders[index];
+    final updatedParked = List<ParkedOrder>.from(state.parkedOrders)..removeAt(index);
+
+    // Merge or replace into active cart
+    state = state.copyWith(
+      items: [...state.items, ...parked.items],
+      selectedPromotion: parked.selectedPromotion ?? state.selectedPromotion,
+      selectedCustomer: parked.selectedCustomer ?? state.selectedCustomer,
+      parkedOrders: updatedParked,
+    );
+    return true;
+  }
+
+  // Delete a parked order
+  void deleteParkedOrder(String id) {
+    final updatedParked = state.parkedOrders.where((o) => o.id != id).toList();
+    state = state.copyWith(parkedOrders: updatedParked);
   }
 }
 

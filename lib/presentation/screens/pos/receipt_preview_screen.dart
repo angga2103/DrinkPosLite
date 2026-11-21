@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_constants.dart';
+import '../../../core/services/printer_service.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../../../core/utils/date_formatter.dart';
 import '../../../data/models/store_model.dart';
@@ -105,7 +106,31 @@ class ReceiptPreviewScreen extends ConsumerWidget {
                       textAlign: TextAlign.center,
                     ),
                   ],
-                  const Divider(height: 24, thickness: 1),
+                  const Divider(height: 20, thickness: 1),
+
+                  // Nomor Antrean Menonjol
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryContainer,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.primaryLight),
+                    ),
+                    child: Column(
+                      children: [
+                        const Text(
+                          'NOMOR ANTREAN',
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.primary),
+                        ),
+                        Text(
+                          '#${transaction.queueNumber.toString().padLeft(2, '0')}',
+                          style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: AppColors.primary),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
 
                   // Metadata
                   Row(
@@ -135,6 +160,19 @@ class ReceiptPreviewScreen extends ConsumerWidget {
                       ),
                     ],
                   ),
+                  if (transaction.customerName != null &&
+                      transaction.customerName!.isNotEmpty &&
+                      transaction.customerName != 'Umum (Default)') ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Pelanggan: ${transaction.customerName}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                        if (transaction.currentStamps > 0)
+                          Text('Stamp: ${transaction.currentStamps % 10}/10 ⭐', style: const TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ],
                   const Divider(height: 24, thickness: 1),
 
                   // Order items
@@ -289,6 +327,42 @@ class ReceiptPreviewScreen extends ConsumerWidget {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 10),
+
+            // Tombol Cetak Tiket Barista / Dapur
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.coffee_outlined, color: AppColors.secondary, size: 18),
+                label: const Text('Cetak Tiket Barista (Khusus Dapur/Racikan)'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.secondary,
+                  side: const BorderSide(color: AppColors.secondary),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                onPressed: () async {
+                  if (!printerState.isConnected) {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const PrinterSettingsScreen()),
+                    );
+                  } else {
+                    final freshStore = await ref.read(settingsRepositoryProvider).getStore();
+                    final success = await PrinterService.instance.printKitchenTicket(
+                      store: freshStore,
+                      transaction: transaction,
+                    );
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(success ? 'Tiket Barista sedang dicetak...' : 'Gagal mencetak tiket barista'),
+                          backgroundColor: success ? AppColors.success : AppColors.danger,
+                        ),
+                      );
+                    }
+                  }
+                },
+              ),
             ),
           ],
         ),

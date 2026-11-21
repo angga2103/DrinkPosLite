@@ -94,6 +94,38 @@ class AppDatabase {
           await db.execute("INSERT OR IGNORE INTO modifier_groups (id, name, selection_type, is_required, display_order) VALUES ('mod_grp_es', 'Level Es Batu', 'SINGLE', 1, 2);");
           await db.execute("INSERT OR IGNORE INTO modifier_groups (id, name, selection_type, is_required, display_order) VALUES ('mod_grp_topping', 'Topping Tambahan', 'MULTIPLE', 0, 3);");
         } catch (_) {}
+        try {
+          await db.execute('ALTER TABLE transactions ADD COLUMN queue_number INTEGER DEFAULT 1;');
+        } catch (_) {}
+        try {
+          await db.execute('ALTER TABLE transactions ADD COLUMN customer_id TEXT;');
+        } catch (_) {}
+        try {
+          await db.execute('ALTER TABLE transactions ADD COLUMN customer_name TEXT;');
+        } catch (_) {}
+        try {
+          await db.execute('ALTER TABLE transactions ADD COLUMN customer_phone TEXT;');
+        } catch (_) {}
+        try {
+          await db.execute('ALTER TABLE transactions ADD COLUMN stamps_earned INTEGER DEFAULT 0;');
+        } catch (_) {}
+        try {
+          await db.execute('ALTER TABLE transactions ADD COLUMN current_stamps INTEGER DEFAULT 0;');
+        } catch (_) {}
+        try {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS customers (
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              phone TEXT,
+              stamps INTEGER DEFAULT 0,
+              total_visits INTEGER DEFAULT 0,
+              created_at TEXT NOT NULL
+            );
+          ''');
+          await db.execute('CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers (phone);');
+          await db.execute("INSERT OR IGNORE INTO customers (id, name, phone, stamps, total_visits, created_at) VALUES ('cust_default', 'Umum (Default)', '', 0, 0, datetime('now'));");
+        } catch (_) {}
       },
       onCreate: (db, version) async {
         final batch = db.batch();

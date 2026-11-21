@@ -325,4 +325,68 @@ class IngredientRepository {
     }
     return batches;
   }
+
+  /// Restok Cepat 1-Klik Bahan Baku tanpa form panjang
+  Future<void> quickRestock({
+    required String ingredientId,
+    required double addedQuantity,
+    String? userId,
+    String? reason,
+  }) async {
+    final db = await _appDb.database;
+    await db.transaction((txn) async {
+      final now = DateTime.now().toIso8601String();
+      final rows = await txn.query('ingredients', where: 'id = ?', whereArgs: [ingredientId]);
+      if (rows.isEmpty) throw Exception('Bahan tidak ditemukan');
+
+      final ing = rows.first;
+      final currentStock = (ing['current_stock'] as num? ?? 0.0).toDouble();
+      final newStock = currentStock + addedQuantity;
+      final unitCost = (ing['cost_per_unit'] as num? ?? 0.0).toDouble();
+
+      await txn.update(
+        'ingredients',
+        {'current_stock': newStock, 'updated_at': now},
+        where: 'id = ?',
+        whereArgs: [ingredientId],
+      );
+
+      // Record stock batch
+      final batchId = IdGenerator.generateId(prefix: 'bat');
+      await txn.insert('stock_batches', {
+        'id': batchId,
+        'ingredient_id': ingredientId,
+        'batch_number': 'RESTOCK-${now.substring(0, 10)}',
+        'initial_quantity': addedQuantity,
+        'remaining_quantity': addedQuantity,
+        'unit_cost': unitCost,
+        'received_date': now.substring(0, 10),
+        'is_active': 1,
+      });
+
+      // Record stock movement
+      await txn.insert('stock_movements', {
+        'id': IdGenerator.generateId(prefix: 'sm'),
+        'ingredient_id': ingredientId,
+        'batch_id': batchId,
+        'movement_type': 'PURCHASE',
+        'quantity_change': addedQuantity,
+        'quantity_before': currentStock,
+        'quantity_after': newStock,
+        'reference_id': 'QUICK_RESTOCK',
+        'reason': reason ?? 'Restok Cepat (+${addedQuantity.toStringAsFixed(1)})',
+        'user_id': userId,
+        'created_at': now,
+      });
+
+      await AuditLogger.log(
+        action: 'QUICK_RESTOCK',
+        entityType: 'INGREDIENT',
+        entityId: ingredientId,
+        userId: userId,
+        reason: 'Restok Cepat ${ing['name']}: +$addedQuantity ${ing['unit']}',
+        db: txn,
+      );
+    });
+  }
 }

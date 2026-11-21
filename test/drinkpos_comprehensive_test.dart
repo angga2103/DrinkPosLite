@@ -8,9 +8,11 @@ import 'package:drinkpos_lite/core/database/database_schema.dart';
 import 'package:drinkpos_lite/core/database/seed_data.dart';
 import 'package:drinkpos_lite/core/services/excel_report_service.dart';
 import 'package:drinkpos_lite/core/services/pdf_report_service.dart';
+import 'package:drinkpos_lite/core/services/printer_service.dart';
 import 'package:drinkpos_lite/core/services/share_service.dart';
 import 'package:drinkpos_lite/core/services/sync_package_service.dart';
 import 'package:drinkpos_lite/core/utils/date_formatter.dart';
+import 'package:drinkpos_lite/data/models/customer_model.dart';
 import 'package:drinkpos_lite/data/models/expense_model.dart';
 import 'package:drinkpos_lite/data/models/ingredient_model.dart';
 import 'package:drinkpos_lite/data/models/product_model.dart';
@@ -22,6 +24,7 @@ import 'package:drinkpos_lite/data/models/transaction_model.dart';
 import 'package:drinkpos_lite/data/models/user_model.dart';
 import 'package:drinkpos_lite/data/repositories/attendance_repository.dart';
 import 'package:drinkpos_lite/data/repositories/auth_repository.dart';
+import 'package:drinkpos_lite/data/repositories/customer_repository.dart';
 import 'package:drinkpos_lite/data/repositories/employee_repository.dart';
 import 'package:drinkpos_lite/data/repositories/expense_repository.dart';
 import 'package:drinkpos_lite/data/repositories/ingredient_repository.dart';
@@ -32,6 +35,7 @@ import 'package:drinkpos_lite/data/repositories/report_repository.dart';
 import 'package:drinkpos_lite/data/repositories/salary_repository.dart';
 import 'package:drinkpos_lite/data/repositories/settings_repository.dart';
 import 'package:drinkpos_lite/data/repositories/shift_repository.dart';
+import 'package:drinkpos_lite/providers/cart_provider.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -999,6 +1003,201 @@ void main() {
         () async => await shiftRepo.openShift(userId: 'usr_cashier', userName: 'Siti', initialCash: 50000, autoClosePrevious: false),
         throwsA(isA<Exception>()),
       );
+    });
+
+    // 26. Customer Creation & Loyalty Stamp Accumulation
+    test('26. Pembuatan pelanggan dan akumulasi stamp loyalty per transaksi cup', () async {
+      final custRepo = CustomerRepository(appDb);
+
+      // Buat pelanggan baru
+      final newCust = await custRepo.saveCustomer(
+        name: 'Agus Santoso',
+        phone: '081234567890',
+        stamps: 0,
+      );
+      expect(newCust.id, isNotEmpty);
+      expect(newCust.name, 'Agus Santoso');
+
+      // Ambil shift aktif
+      final activeShift = await shiftRepo.getCurrentOpenShift();
+
+      // Transaksi dengan 3 cup minuman untuk Agus
+      final prods = await productRepo.getProducts();
+      final tea = prods.firstWhere((p) => p.name.contains('Teh'));
+
+      final items = [
+        TransactionItemModel(
+          id: 'ti_stamp_1',
+          transactionId: 'trx_stamp_test',
+          productId: tea.id,
+          productName: tea.name,
+          quantity: 3,
+          unitPrice: 5000,
+          subtotal: 15000,
+        ),
+      ];
+
+      final trx = await posRepo.createTransaction(
+        cashierId: 'usr_cashier',
+        cashierName: 'Siti',
+        shiftId: activeShift!.id,
+        items: items,
+        totalAmount: 15000,
+        finalAmount: 15000,
+        paymentMethod: 'TUNAI',
+        cashReceived: 20000,
+        changeAmount: 5000,
+        customerId: newCust.id,
+        customerName: newCust.name,
+        customerPhone: newCust.phone,
+      );
+
+      expect(trx.stampsEarned, 3);
+      expect(trx.currentStamps, 3);
+      expect(trx.customerId, newCust.id);
+
+      // Verifikasi di repository customer
+      final updatedCust = await custRepo.getCustomerById(newCust.id);
+      expect(updatedCust!.stamps, 3);
+      expect(updatedCust.totalVisits, 1);
+      expect(updatedCust.currentCycleStamps, 3);
+      expect(updatedCust.stampsRemaining, 7);
+      expect(updatedCust.hasReward, false);
+    });
+
+    // 27. Daily Queue Number Auto-Increment
+    test('27. Nomor antrean otomatis ter-generate dan bertambah secara sekuensial', () async {
+      final activeShift = await shiftRepo.getCurrentOpenShift();
+      final prods = await productRepo.getProducts();
+      final tea = prods.first;
+
+      final item = TransactionItemModel(
+        id: 'ti_q_test',
+        transactionId: '',
+        productId: tea.id,
+        productName: tea.name,
+        quantity: 1,
+        unitPrice: 5000,
+        subtotal: 5000,
+      );
+
+      final trx1 = await posRepo.createTransaction(
+        cashierId: 'usr_cashier',
+        cashierName: 'Siti',
+        shiftId: activeShift!.id,
+        items: [item],
+        totalAmount: 5000,
+        finalAmount: 5000,
+        paymentMethod: 'TUNAI',
+      );
+
+      final trx2 = await posRepo.createTransaction(
+        cashierId: 'usr_cashier',
+        cashierName: 'Siti',
+        shiftId: activeShift.id,
+        items: [item],
+        totalAmount: 5000,
+        finalAmount: 5000,
+        paymentMethod: 'TUNAI',
+      );
+
+      expect(trx1.queueNumber, greaterThan(0));
+      expect(trx2.queueNumber, equals(trx1.queueNumber + 1));
+    });
+
+    // 28. Park/Hold Order and Recall in CartNotifier
+    test('28. Fitur tahan pesanan (park order) dan panggil kembali (recall) berfungsi sempurna', () {
+      final cartNotifier = CartNotifier();
+
+      // Tambahkan item ke keranjang
+      final item1 = CartItem(
+        productId: 'prod_1',
+        productName: 'Es Teh Manis',
+        quantity: 2,
+        unitPrice: 5000,
+      );
+      cartNotifier.addItem(item1);
+      expect(cartNotifier.state.totalItemCount, 2);
+      expect(cartNotifier.state.finalTotal, 10000);
+
+      // Tahan pesanan
+      final parked = cartNotifier.parkCurrentOrder(label: 'Antrean Meja 4');
+      expect(parked, true);
+      expect(cartNotifier.state.items, isEmpty);
+      expect(cartNotifier.state.parkedOrders.length, 1);
+      expect(cartNotifier.state.parkedOrders.first.label, 'Antrean Meja 4');
+
+      // Layani pesanan lain dulu
+      final item2 = CartItem(
+        productId: 'prod_2',
+        productName: 'Kopi Susu',
+        quantity: 1,
+        unitPrice: 12000,
+      );
+      cartNotifier.addItem(item2);
+      expect(cartNotifier.state.totalItemCount, 1);
+
+      // Panggil kembali pesanan yang ditahan
+      final recalled = cartNotifier.recallParkedOrder(cartNotifier.state.parkedOrders.first.id);
+      expect(recalled, true);
+      expect(cartNotifier.state.parkedOrders, isEmpty);
+      expect(cartNotifier.state.totalItemCount, 3); // item2 (1) + item1 (2)
+    });
+
+    // 29. Quick Restock in IngredientRepository
+    test('29. Restok cepat bahan baku 1-klik berhasil mengupdate stok dan riwayat mutasi', () async {
+      final ingList = await ingredientRepo.getIngredients();
+      final sugar = ingList.firstWhere((i) => i.name.contains('Gula'));
+      final stockBefore = sugar.currentStock;
+
+      // Lakukan quick restock +500 gram
+      await ingredientRepo.quickRestock(
+        ingredientId: sugar.id,
+        addedQuantity: 500.0,
+        userId: 'usr_cashier',
+        reason: 'Restok Cepat Test',
+      );
+
+      final sugarAfter = await ingredientRepo.getIngredientById(sugar.id);
+      expect(sugarAfter!.currentStock, stockBefore + 500.0);
+
+      // Verifikasi riwayat mutasi stok tercatat
+      final movements = await ingredientRepo.getStockMovements(ingredientId: sugar.id, limit: 1);
+      expect(movements.isNotEmpty, true);
+      expect(movements.first.quantityChange, 500.0);
+      expect(movements.first.movementType, 'PURCHASE');
+    });
+
+    // 30. Kitchen Ticket Generation in PrinterService
+    test('30. Generator tiket dapur/barista menghasilkan format tanpa harga yang benar', () async {
+      final store = await settingsRepo.getStore();
+      final activeShift = await shiftRepo.getCurrentOpenShift();
+      final prods = await productRepo.getProducts();
+
+      final item = TransactionItemModel(
+        id: 'ti_kitchen',
+        transactionId: '',
+        productId: prods.first.id,
+        productName: prods.first.name,
+        quantity: 2,
+        unitPrice: 8000,
+        subtotal: 16000,
+        notes: 'Sedikit Es, Tanpa Gula',
+      );
+
+      final trx = await posRepo.createTransaction(
+        cashierId: 'usr_cashier',
+        cashierName: 'Siti',
+        shiftId: activeShift!.id,
+        items: [item],
+        totalAmount: 16000,
+        finalAmount: 16000,
+        paymentMethod: 'TUNAI',
+      );
+
+      expect(trx.queueNumber, greaterThan(0));
+      expect(trx.items.length, 1);
+      expect(trx.items.first.notes, 'Sedikit Es, Tanpa Gula');
     });
   });
 }

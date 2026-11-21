@@ -274,6 +274,12 @@ class DatabaseSchema {
       qris_amount REAL DEFAULT 0,
       change_amount REAL DEFAULT 0,
       status TEXT DEFAULT 'SELESAI', -- SELESAI, DIBATALKAN
+      queue_number INTEGER DEFAULT 1,
+      customer_id TEXT,
+      customer_name TEXT,
+      customer_phone TEXT,
+      stamps_earned INTEGER DEFAULT 0,
+      current_stamps INTEGER DEFAULT 0,
       notes TEXT,
       created_at TEXT NOT NULL,
       cancelled_at TEXT,
@@ -449,6 +455,18 @@ class DatabaseSchema {
       status TEXT DEFAULT 'SUCCESS',
       error_message TEXT
     );
+    ''',
+
+    // 28. Customers & Loyalty Stamps
+    '''
+    CREATE TABLE IF NOT EXISTS customers (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      phone TEXT,
+      stamps INTEGER DEFAULT 0,
+      total_visits INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
     '''
   ];
 
@@ -465,6 +483,7 @@ class DatabaseSchema {
     'CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses (date);',
     'CREATE INDEX IF NOT EXISTS idx_attendance_user_date ON attendance (user_id, date);',
     'CREATE INDEX IF NOT EXISTS idx_shifts_user_status ON shifts (user_id, status);',
-    'CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs (action);'
+    'CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs (action);',
+    'CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers (phone);'
   ];
 }

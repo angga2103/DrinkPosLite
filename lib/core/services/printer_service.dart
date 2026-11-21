@@ -259,6 +259,23 @@ class PrinterService {
 
       bytes += generator.text(_dividerLine(), styles: const PosStyles(align: PosAlign.center));
 
+      // Nomor Antrean Menonjol
+      bytes += generator.text(
+        'NOMOR ANTREAN',
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      );
+      bytes += generator.text(
+        '#${transaction.queueNumber.toString().padLeft(2, '0')}',
+        styles: const PosStyles(
+          align: PosAlign.center,
+          bold: true,
+          height: PosTextSize.size2,
+          width: PosTextSize.size2,
+        ),
+      );
+
+      bytes += generator.text(_dividerLine(), styles: const PosStyles(align: PosAlign.center));
+
       // 6. Informasi Transaksi (2 baris rapi terformat pas kolom)
       final dt = DateTime.tryParse(transaction.createdAt) ?? DateTime.now();
       final cleanCashier = transaction.cashierName.replaceAll(RegExp(r'\(.*?\)'), '').trim();
@@ -269,6 +286,12 @@ class PrinterService {
       bytes += generator.text(
         _formatTwoColumns('Tgl: ${DateFormatter.formatDateShort(dt)}', 'Kasir: $cleanCashier'),
       );
+
+      if (transaction.customerName != null &&
+          transaction.customerName!.isNotEmpty &&
+          transaction.customerName != 'Umum (Default)') {
+        bytes += generator.text(_formatTwoColumns('Pelanggan', transaction.customerName!));
+      }
 
       bytes += generator.text(_dividerLine(), styles: const PosStyles(align: PosAlign.center));
 
@@ -324,6 +347,20 @@ class PrinterService {
         bytes += generator.text(_formatTwoColumns('Nominal QRIS', CurrencyFormatter.format(qAmount)));
       }
 
+      // 10b. Loyalty Stamp Info (Jika Ada)
+      if (transaction.currentStamps > 0) {
+        bytes += generator.text(_dividerLine(), styles: const PosStyles(align: PosAlign.center));
+        final cycle = transaction.currentStamps % 10;
+        final starStr = ('*' * cycle) + ('-' * (10 - cycle));
+        bytes += generator.text(_formatTwoColumns('Loyalty Stamp', '[$starStr] $cycle/10'));
+        if (transaction.currentStamps >= 10 && cycle == 0) {
+          bytes += generator.text('SELAMAT! STAMP PENUH (10/10)', styles: const PosStyles(align: PosAlign.center, bold: true));
+          bytes += generator.text('KLAIM REWARD: 1 CUP GRATIS!', styles: const PosStyles(align: PosAlign.center, bold: true));
+        } else {
+          bytes += generator.text('Kumpulkan 10 stamp untuk 1 Cup Gratis!', styles: const PosStyles(align: PosAlign.center, fontType: PosFontType.fontB));
+        }
+      }
+
       bytes += generator.text(_dividerLine(), styles: const PosStyles(align: PosAlign.center));
 
       // 11. Footer Struk
@@ -340,6 +377,95 @@ class PrinterService {
       bytes += generator.text(AppConstants.developedByText, styles: const PosStyles(align: PosAlign.center, fontType: PosFontType.fontB));
 
       // Hemat kertas maksimal: Cukup 1 feed pendek agar tidak boros kertas
+      bytes += generator.feed(1);
+
+      final res = await PrintBluetoothThermal.writeBytes(bytes);
+      return res;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Tiket Pesanan Khusus Dapur / Barista (Hanya menu racikan, tanpa harga)
+  Future<bool> printKitchenTicket({
+    required StoreModel store,
+    required TransactionModel transaction,
+  }) async {
+    try {
+      final profile = await CapabilityProfile.load();
+      final generator = Generator(_paperSize, profile);
+      List<int> bytes = [];
+
+      bytes += generator.reset();
+
+      // Header Tiket Barista
+      bytes += generator.text(
+        '*** TIKET DAPUR / BARISTA ***',
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      );
+      bytes += generator.text(
+        store.name,
+        styles: const PosStyles(align: PosAlign.center),
+      );
+
+      bytes += generator.text(_dividerLine(), styles: const PosStyles(align: PosAlign.center));
+
+      // Nomor Antrean Besar
+      bytes += generator.text(
+        'NOMOR ANTREAN',
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      );
+      bytes += generator.text(
+        '#${transaction.queueNumber.toString().padLeft(2, '0')}',
+        styles: const PosStyles(
+          align: PosAlign.center,
+          bold: true,
+          height: PosTextSize.size2,
+          width: PosTextSize.size2,
+        ),
+      );
+
+      bytes += generator.text(_dividerLine(), styles: const PosStyles(align: PosAlign.center));
+
+      // Info Waktu & Kasir
+      final dt = DateTime.tryParse(transaction.createdAt) ?? DateTime.now();
+      final cleanCashier = transaction.cashierName.replaceAll(RegExp(r'\(.*?\)'), '').trim();
+
+      bytes += generator.text(_formatTwoColumns('No: ${transaction.transactionNumber}', DateFormatter.formatTime(dt)));
+      bytes += generator.text(_formatTwoColumns('Kasir: $cleanCashier', DateFormatter.formatDateShort(dt)));
+
+      if (transaction.customerName != null &&
+          transaction.customerName!.isNotEmpty &&
+          transaction.customerName != 'Umum (Default)') {
+        bytes += generator.text(_formatTwoColumns('Pelanggan', transaction.customerName!));
+      }
+
+      bytes += generator.text(_dividerLine(), styles: const PosStyles(align: PosAlign.center));
+
+      // Daftar Pesanan (Item, Level, Topping, Catatan)
+      int totalItems = 0;
+      for (final item in transaction.items) {
+        totalItems += item.quantity;
+        final variantText = item.variantName != null && item.variantName!.isNotEmpty ? ' (${item.variantName})' : '';
+        bytes += generator.text(
+          '[ ] ${item.quantity}x ${item.productName}$variantText',
+          styles: const PosStyles(bold: true),
+        );
+
+        for (final mod in item.modifiers) {
+          bytes += generator.text('    * ${mod.name}', styles: const PosStyles(fontType: PosFontType.fontB));
+        }
+
+        if (item.notes != null && item.notes!.trim().isNotEmpty) {
+          bytes += generator.text('    Catatan: ${item.notes!.trim()}', styles: const PosStyles(fontType: PosFontType.fontB));
+        }
+      }
+
+      bytes += generator.text(_dividerLine(), styles: const PosStyles(align: PosAlign.center));
+      bytes += generator.text(_formatTwoColumns('TOTAL CUP:', '$totalItems Cup'), styles: const PosStyles(bold: true));
+      bytes += generator.text(_dividerLine(), styles: const PosStyles(align: PosAlign.center));
+
+      // Feed & Print
       bytes += generator.feed(1);
 
       final res = await PrintBluetoothThermal.writeBytes(bytes);

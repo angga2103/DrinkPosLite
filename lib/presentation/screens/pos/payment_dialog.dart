@@ -169,11 +169,9 @@ class _PaymentDialogState extends State<PaymentDialog> {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  _quickCashChip('Uang Pas', widget.finalAmount),
-                  _quickCashChip('Rp 10.000', 10000),
-                  _quickCashChip('Rp 20.000', 20000),
-                  _quickCashChip('Rp 50.000', 50000),
-                  _quickCashChip('Rp 100.000', 100000),
+                  _quickCashChip('Uang Pas (${CurrencyFormatter.format(widget.finalAmount)})', widget.finalAmount, isExact: true),
+                  for (final amount in _getSmartCashDenominations(widget.finalAmount))
+                    _quickCashChip(CurrencyFormatter.format(amount), amount),
                 ],
               ),
             ] else if (_selectedMethod == AppConstants.paymentQris) ...[
@@ -334,11 +332,53 @@ class _PaymentDialogState extends State<PaymentDialog> {
     );
   }
 
-  Widget _quickCashChip(String label, double amount) {
+  List<double> _getSmartCashDenominations(double target) {
+    if (target <= 0) return [10000, 20000, 50000, 100000];
+    final Set<double> suggestions = {};
+
+    // 1. Next multiple of 5.000
+    final next5k = (target / 5000).ceil() * 5000.0;
+    if (next5k > target) suggestions.add(next5k);
+
+    // 2. Next multiple of 10.000
+    final next10k = (target / 10000).ceil() * 10000.0;
+    if (next10k > target) suggestions.add(next10k);
+
+    // 3. Next multiple of 20.000
+    final next20k = (target / 20000).ceil() * 20000.0;
+    if (next20k > target) suggestions.add(next20k);
+
+    // 4. Next multiple of 50.000
+    final next50k = (target / 50000).ceil() * 50000.0;
+    if (next50k > target) suggestions.add(next50k);
+
+    // 5. Next multiple of 100.000
+    final next100k = (target / 100000).ceil() * 100000.0;
+    if (next100k > target) suggestions.add(next100k);
+
+    // Standard high bills if target is within reach
+    for (final bill in [10000.0, 20000.0, 50000.0, 100000.0, 200000.0]) {
+      if (bill > target) suggestions.add(bill);
+    }
+
+    final list = suggestions.toList()..sort();
+    return list.take(4).toList(); // Top 4 dynamic suggestions
+  }
+
+  Widget _quickCashChip(String label, double amount, {bool isExact = false}) {
+    final isSelected = (_cashReceived - amount).abs() < 0.01;
     return ActionChip(
-      label: Text(label),
-      backgroundColor: AppColors.background,
-      side: const BorderSide(color: AppColors.cardBorder),
+      avatar: isExact ? const Icon(Icons.check_circle_outline, size: 16, color: AppColors.primary) : null,
+      label: Text(
+        label,
+        style: TextStyle(
+          color: isSelected ? Colors.white : (isExact ? AppColors.primary : AppColors.textPrimary),
+          fontWeight: isSelected || isExact ? FontWeight.bold : FontWeight.normal,
+          fontSize: 12,
+        ),
+      ),
+      backgroundColor: isSelected ? AppColors.primary : (isExact ? AppColors.primaryContainer : AppColors.background),
+      side: BorderSide(color: isSelected ? AppColors.primary : (isExact ? AppColors.primary : AppColors.cardBorder)),
       onPressed: () {
         setState(() {
           _cashController.text = amount.toStringAsFixed(0);
