@@ -1,7 +1,7 @@
 class AppConstants {
   static const String appName = 'DrinkPOS Lite';
-  static const String appVersion = '1.0.5';
-  static const String appBuild = '8';
+  static const String appVersion = '1.0.6';
+  static const String appBuild = '9';
 
   // Developer Identity - MANDATORY
   static const String developerName = 'Ansor.Studio';

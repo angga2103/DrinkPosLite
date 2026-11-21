@@ -3,6 +3,7 @@ import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/models/store_model.dart';
 import '../../data/models/transaction_model.dart';
 import '../constants/app_constants.dart';
@@ -15,16 +16,122 @@ class PrinterService {
 
   static const MethodChannel _nativeChannel = MethodChannel('com.ansorstudi.drinkpos_lite/device');
 
+  static const String keyCashierMac = 'printer_cashier_mac';
+  static const String keyCashierName = 'printer_cashier_name';
+  static const String keyKitchenEnabled = 'printer_kitchen_enabled';
+  static const String keyKitchenMac = 'printer_kitchen_mac';
+  static const String keyKitchenName = 'printer_kitchen_name';
+  static const String keyKitchenAutoPrint = 'printer_kitchen_autoprint';
+  static const String keyPaperSize = 'printer_paper_size';
+
   bool _isConnected = false;
   String? _connectedMac;
   PaperSize _paperSize = PaperSize.mm58;
+
+  // Dual Printer Configuration
+  String? _cashierMac;
+  String? _cashierName;
+  bool _isKitchenEnabled = false;
+  String? _kitchenMac;
+  String? _kitchenName;
+  bool _autoPrintKitchen = true;
 
   bool get isConnected => _isConnected;
   String? get connectedMac => _connectedMac;
   PaperSize get paperSize => _paperSize;
 
-  void setPaperSize(PaperSize size) {
+  String? get cashierMac => _cashierMac;
+  String? get cashierName => _cashierName;
+  bool get isKitchenEnabled => _isKitchenEnabled;
+  String? get kitchenMac => _kitchenMac;
+  String? get kitchenName => _kitchenName;
+  bool get autoPrintKitchen => _autoPrintKitchen;
+
+  Future<void> loadSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _cashierMac = prefs.getString(keyCashierMac);
+      _cashierName = prefs.getString(keyCashierName);
+      _isKitchenEnabled = prefs.getBool(keyKitchenEnabled) ?? false;
+      _kitchenMac = prefs.getString(keyKitchenMac);
+      _kitchenName = prefs.getString(keyKitchenName);
+      _autoPrintKitchen = prefs.getBool(keyKitchenAutoPrint) ?? true;
+
+      final savedPaperSize = prefs.getString(keyPaperSize);
+      if (savedPaperSize == 'mm80') {
+        _paperSize = PaperSize.mm80;
+      } else {
+        _paperSize = PaperSize.mm58;
+      }
+    } catch (_) {}
+  }
+
+  Future<void> setCashierPrinter(String mac, {String? name}) async {
+    _cashierMac = mac.trim();
+    if (name != null && name.trim().isNotEmpty) {
+      _cashierName = name.trim();
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(keyCashierMac, _cashierMac!);
+      if (_cashierName != null) {
+        await prefs.setString(keyCashierName, _cashierName!);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> setKitchenPrinter(String mac, {String? name}) async {
+    _kitchenMac = mac.trim();
+    if (name != null && name.trim().isNotEmpty) {
+      _kitchenName = name.trim();
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(keyKitchenMac, _kitchenMac!);
+      if (_kitchenName != null) {
+        await prefs.setString(keyKitchenName, _kitchenName!);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> setKitchenEnabled(bool enabled) async {
+    _isKitchenEnabled = enabled;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(keyKitchenEnabled, enabled);
+    } catch (_) {}
+  }
+
+  Future<void> setAutoPrintKitchen(bool enabled) async {
+    _autoPrintKitchen = enabled;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(keyKitchenAutoPrint, enabled);
+    } catch (_) {}
+  }
+
+  Future<void> setPaperSize(PaperSize size) async {
     _paperSize = size;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(keyPaperSize, size == PaperSize.mm80 ? 'mm80' : 'mm58');
+    } catch (_) {}
+  }
+
+  Future<bool> ensureConnectedTo(String? targetMac) async {
+    if (targetMac == null || targetMac.trim().isEmpty) {
+      return _isConnected;
+    }
+    final cleanMac = targetMac.trim();
+    if (_isConnected && _connectedMac == cleanMac) {
+      return true;
+    }
+    // Clean handover between printers to prevent RFCOMM collision
+    if (_isConnected) {
+      await disconnect();
+      await Future.delayed(const Duration(milliseconds: 350));
+    }
+    return await connect(cleanMac);
   }
 
   Future<bool> openNativeBluetoothSettings() async {
@@ -145,8 +252,12 @@ class PrinterService {
     }
   }
 
-  Future<bool> printTestReceipt(StoreModel store) async {
+  Future<bool> printTestReceipt(StoreModel store, {bool forKitchen = false}) async {
     try {
+      final targetMac = forKitchen ? _kitchenMac : _cashierMac;
+      if (targetMac != null && targetMac.isNotEmpty) {
+        await ensureConnectedTo(targetMac);
+      }
       final profile = await CapabilityProfile.load();
       final generator = Generator(_paperSize, profile);
       List<int> bytes = [];
@@ -191,8 +302,15 @@ class PrinterService {
       }
 
       bytes += generator.text(_dividerLine(), styles: const PosStyles(align: PosAlign.center));
-      bytes += generator.text('TES PRINTER THERMAL', styles: const PosStyles(align: PosAlign.center, bold: true));
+      bytes += generator.text(
+        forKitchen ? 'TES PRINTER DAPUR / BARISTA' : 'TES PRINTER KASIR',
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      );
       bytes += generator.text('Status: Berhasil Terhubung!', styles: const PosStyles(align: PosAlign.center));
+      final assignedName = forKitchen ? _kitchenName : _cashierName;
+      if (assignedName != null && assignedName.isNotEmpty) {
+        bytes += generator.text('Perangkat: $assignedName', styles: const PosStyles(align: PosAlign.center));
+      }
       bytes += generator.text(DateFormatter.formatDateTime(DateTime.now()), styles: const PosStyles(align: PosAlign.center));
       bytes += generator.text(_dividerLine(), styles: const PosStyles(align: PosAlign.center));
 
@@ -214,6 +332,9 @@ class PrinterService {
     required TransactionModel transaction,
   }) async {
     try {
+      if (_cashierMac != null && _cashierMac!.isNotEmpty) {
+        await ensureConnectedTo(_cashierMac);
+      }
       final profile = await CapabilityProfile.load();
       final generator = Generator(_paperSize, profile);
       List<int> bytes = [];
@@ -392,6 +513,13 @@ class PrinterService {
     required TransactionModel transaction,
   }) async {
     try {
+      final targetMac = (_isKitchenEnabled && _kitchenMac != null && _kitchenMac!.isNotEmpty)
+          ? _kitchenMac
+          : _cashierMac;
+
+      if (targetMac != null && targetMac.isNotEmpty) {
+        await ensureConnectedTo(targetMac);
+      }
       final profile = await CapabilityProfile.load();
       final generator = Generator(_paperSize, profile);
       List<int> bytes = [];

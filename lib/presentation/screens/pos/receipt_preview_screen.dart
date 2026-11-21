@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_constants.dart';
-import '../../../core/services/printer_service.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../../../core/utils/date_formatter.dart';
 import '../../../data/models/store_model.dart';
@@ -14,15 +13,52 @@ import '../../../providers/settings_provider.dart';
 import '../settings/printer_settings_screen.dart';
 import 'pos_screen.dart';
 
-class ReceiptPreviewScreen extends ConsumerWidget {
+class ReceiptPreviewScreen extends ConsumerStatefulWidget {
   final TransactionModel transaction;
 
   const ReceiptPreviewScreen({super.key, required this.transaction});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ReceiptPreviewScreen> createState() => _ReceiptPreviewScreenState();
+}
+
+class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
+  bool _autoPrintAttempted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _handleAutoKitchenPrint());
+  }
+
+  Future<void> _handleAutoKitchenPrint() async {
+    if (_autoPrintAttempted || !mounted) return;
+    _autoPrintAttempted = true;
+
+    final printerState = ref.read(printerProvider);
+    if (printerState.isKitchenEnabled && printerState.autoPrintKitchen && printerState.kitchenMac != null) {
+      final store = ref.read(settingsProvider).store;
+      final ok = await ref.read(printerProvider.notifier).printKitchenTicket(
+            store: store,
+            transaction: widget.transaction,
+          );
+      if (mounted && ok) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Tiket pesanan otomatis dikirim ke Printer Dapur...'),
+            backgroundColor: AppColors.secondary,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final store = ref.watch(settingsProvider).store;
     final printerState = ref.watch(printerProvider);
+    final transaction = widget.transaction;
 
     return Scaffold(
       appBar: AppBar(
@@ -281,15 +317,15 @@ class ReceiptPreviewScreen extends ConsumerWidget {
                 Expanded(
                   child: OutlinedButton.icon(
                     icon: Icon(
-                      printerState.isConnected ? Icons.print : Icons.print_disabled,
-                      color: printerState.isConnected ? AppColors.primary : AppColors.secondary,
+                      (printerState.isConnected || printerState.cashierMac != null) ? Icons.print : Icons.print_disabled,
+                      color: (printerState.isConnected || printerState.cashierMac != null) ? AppColors.primary : AppColors.secondary,
                     ),
-                    label: Text(printerState.isConnected ? 'Cetak Struk' : 'Atur Printer'),
+                    label: Text((printerState.isConnected || printerState.cashierMac != null) ? 'Cetak Struk' : 'Atur Printer'),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                     onPressed: () async {
-                      if (!printerState.isConnected) {
+                      if (printerState.cashierMac == null && !printerState.isConnected) {
                         Navigator.of(context).push(
                           MaterialPageRoute(builder: (_) => const PrinterSettingsScreen()),
                         );
@@ -328,42 +364,44 @@ class ReceiptPreviewScreen extends ConsumerWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 10),
 
-            // Tombol Cetak Tiket Barista / Dapur
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                icon: const Icon(Icons.coffee_outlined, color: AppColors.secondary, size: 18),
-                label: const Text('Cetak Tiket Barista (Khusus Dapur/Racikan)'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.secondary,
-                  side: const BorderSide(color: AppColors.secondary),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-                onPressed: () async {
-                  if (!printerState.isConnected) {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const PrinterSettingsScreen()),
-                    );
-                  } else {
-                    final freshStore = await ref.read(settingsRepositoryProvider).getStore();
-                    final success = await PrinterService.instance.printKitchenTicket(
-                      store: freshStore,
-                      transaction: transaction,
-                    );
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(success ? 'Tiket Barista sedang dicetak...' : 'Gagal mencetak tiket barista'),
-                          backgroundColor: success ? AppColors.success : AppColors.danger,
-                        ),
+            // Tombol Cetak Tiket Barista / Dapur (Khusus jika fitur Printer Dapur diaktifkan)
+            if (printerState.isKitchenEnabled) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.coffee_outlined, color: AppColors.secondary, size: 18),
+                  label: const Text('Cetak Tiket Barista / Dapur'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.secondary,
+                    side: const BorderSide(color: AppColors.secondary),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  onPressed: () async {
+                    if (printerState.kitchenMac == null && !printerState.isConnected) {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const PrinterSettingsScreen()),
                       );
+                    } else {
+                      final freshStore = await ref.read(settingsRepositoryProvider).getStore();
+                      final success = await ref.read(printerProvider.notifier).printKitchenTicket(
+                            store: freshStore,
+                            transaction: transaction,
+                          );
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(success ? 'Tiket Barista berhasil dikirim ke printer dapur!' : 'Gagal mencetak tiket dapur. Cek koneksi printer.'),
+                            backgroundColor: success ? AppColors.success : AppColors.danger,
+                          ),
+                        );
+                      }
                     }
-                  }
-                },
+                  },
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),
@@ -398,6 +436,7 @@ class ReceiptPreviewScreen extends ConsumerWidget {
   }
 
   void _shareReceiptText(StoreModel store) {
+    final transaction = widget.transaction;
     final buffer = StringBuffer();
     buffer.writeln('🧾 *STRUK PEMBAYARAN*');
     buffer.writeln('*${store.name}*');

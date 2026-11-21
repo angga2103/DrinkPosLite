@@ -3,10 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:drinkpos_lite/core/constants/app_constants.dart';
 import 'package:drinkpos_lite/presentation/screens/modifiers/modifier_management_screen.dart';
+import 'package:drinkpos_lite/presentation/screens/settings/printer_settings_screen.dart';
 import 'package:drinkpos_lite/presentation/widgets/custom_button.dart';
 import 'package:drinkpos_lite/presentation/widgets/metric_card.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
   testWidgets('Core UI elements and developer branding render properly', (WidgetTester tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -48,5 +53,20 @@ void main() {
       ),
     );
     expect(find.byType(ModifierManagementScreen), findsOneWidget);
+  });
+
+  testWidgets('PrinterSettingsScreen compiles and renders dual printer sections', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(
+          home: PrinterSettingsScreen(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Pengaturan Dual Printer Thermal'), findsOneWidget);
+    expect(find.text('1. Printer Kasir (Struk Konsumen)'), findsOneWidget);
+    expect(find.text('2. Printer Dapur / Barista (Tiket Pesanan)'), findsOneWidget);
+    expect(find.text('Aktifkan Printer Dapur Terpisah'), findsOneWidget);
   });
 }

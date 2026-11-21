@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:drinkpos_lite/core/constants/app_constants.dart';
 import 'package:drinkpos_lite/core/database/app_database.dart';
@@ -59,6 +60,7 @@ void main() {
   late SettingsRepository settingsRepo;
 
   setUp(() async {
+    SharedPreferences.setMockInitialValues({});
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall methodCall) async {
@@ -1198,6 +1200,36 @@ void main() {
       expect(trx.queueNumber, greaterThan(0));
       expect(trx.items.length, 1);
       expect(trx.items.first.notes, 'Sedikit Es, Tanpa Gula');
+    });
+
+    // 31. Dual Printer (Kasir & Dapur) Configuration & Auto-Routing
+    test('31. Konfigurasi Dual Printer (Kasir & Dapur) dengan auto-print dan routing presisi', () async {
+      SharedPreferences.setMockInitialValues({});
+      final printer = PrinterService.instance;
+
+      // 1. Simpan konfigurasi printer Kasir
+      await printer.setCashierPrinter('66:02:BD:06:18:7B', name: 'Thermal Kasir 58mm');
+      expect(printer.cashierMac, '66:02:BD:06:18:7B');
+      expect(printer.cashierName, 'Thermal Kasir 58mm');
+
+      // 2. Simpan konfigurasi printer Dapur
+      await printer.setKitchenPrinter('88:12:AA:33:44:55', name: 'Thermal Dapur 80mm');
+      expect(printer.kitchenMac, '88:12:AA:33:44:55');
+      expect(printer.kitchenName, 'Thermal Dapur 80mm');
+
+      // 3. Toggle kitchen enabled & auto print
+      await printer.setKitchenEnabled(true);
+      expect(printer.isKitchenEnabled, true);
+
+      await printer.setAutoPrintKitchen(true);
+      expect(printer.autoPrintKitchen, true);
+
+      // 4. Verifikasi persistensi setelah reload
+      await printer.loadSettings();
+      expect(printer.cashierMac, '66:02:BD:06:18:7B');
+      expect(printer.kitchenMac, '88:12:AA:33:44:55');
+      expect(printer.isKitchenEnabled, true);
+      expect(printer.autoPrintKitchen, true);
     });
   });
 }
