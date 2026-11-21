@@ -1231,5 +1231,37 @@ void main() {
       expect(printer.isKitchenEnabled, true);
       expect(printer.autoPrintKitchen, true);
     });
+
+    // 32. Pemesanan multi-varian dalam satu aksi dialog (Skema A)
+    test('32. Pemesanan multi-varian dalam satu transaksi (Skema A) berhasil diakumulasi ke keranjang', () async {
+      final cartNotifier = CartNotifier();
+
+      // Tambahkan 3x Regular @15.000 dan 2x Large @18.000 dari produk yang sama
+      final itemReg = CartItem(
+        productId: 'prod_aren',
+        productName: 'Es Kopi Susu Gula Aren',
+        variantId: 'var_reg',
+        variantName: 'Regular (16oz)',
+        quantity: 3,
+        unitPrice: 15000,
+      );
+      final itemLarge = CartItem(
+        productId: 'prod_aren',
+        productName: 'Es Kopi Susu Gula Aren',
+        variantId: 'var_large',
+        variantName: 'Large (22oz)',
+        quantity: 2,
+        unitPrice: 18000,
+      );
+
+      cartNotifier.addItem(itemReg);
+      cartNotifier.addItem(itemLarge);
+
+      final state = cartNotifier.state;
+      expect(state.items.length, 2);
+      expect(state.totalItemCount, 5); // 3 + 2 = 5 Cup
+      expect(state.subtotal, (3 * 15000) + (2 * 18000)); // 45.000 + 36.000 = 81.000
+      expect(state.finalTotal, 81000);
+    });
   });
 }

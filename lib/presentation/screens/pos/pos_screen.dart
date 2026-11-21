@@ -207,9 +207,11 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       return;
     }
 
-    final cartItem = await OrderItemDialog.show(context, product);
-    if (cartItem != null) {
-      ref.read(cartProvider.notifier).addItem(cartItem);
+    final cartItems = await OrderItemDialog.show(context, product);
+    if (cartItems != null && cartItems.isNotEmpty) {
+      for (final item in cartItems) {
+        ref.read(cartProvider.notifier).addItem(item);
+      }
     }
   }
 
@@ -218,7 +220,12 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => const _CartBottomSheetContent(),
+      builder: (ctx) => _CartBottomSheetContent(
+        onCheckout: () {
+          Navigator.of(ctx).pop();
+          _processCheckout();
+        },
+      ),
     );
   }
 
@@ -702,15 +709,16 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                     ),
                     const SizedBox(width: 8),
 
-                    // Checkout / Pay Button
+                    // Cek Pesanan & Bayar Button (Skema A)
                     ElevatedButton.icon(
-                      icon: const Icon(Icons.payment, size: 18),
-                      label: const Text('Bayar'),
+                      icon: const Icon(Icons.receipt_long, size: 18),
+                      label: const Text('Cek Pesanan & Bayar'),
                       style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                        backgroundColor: AppColors.primary,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
-                      onPressed: _processCheckout,
+                      onPressed: _showCartBottomSheet,
                     ),
                   ],
                 ),
@@ -744,7 +752,9 @@ class _PosScreenState extends ConsumerState<PosScreen> {
 
 // Bottom sheet to view and edit cart items, apply promo
 class _CartBottomSheetContent extends ConsumerWidget {
-  const _CartBottomSheetContent();
+  final VoidCallback? onCheckout;
+
+  const _CartBottomSheetContent({this.onCheckout});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -937,14 +947,48 @@ class _CartBottomSheetContent extends ConsumerWidget {
           ),
           const SizedBox(height: 12),
 
-          // Close modal button
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Lanjutkan Memilih Menu'),
+          // Action Buttons: Pay and Add More
+          if (!cart.isEmpty) ...[
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.payment, size: 20),
+                label: Text(
+                  'Lanjut Pembayaran • ${CurrencyFormatter.format(cart.finalTotal)}',
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                onPressed: onCheckout,
+              ),
             ),
-          ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.add_shopping_cart, size: 16),
+                label: const Text('Tambah Menu Lain'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  side: const BorderSide(color: AppColors.primary),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ),
+          ] else ...[
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Kembali ke Menu'),
+              ),
+            ),
+          ],
         ],
       ),
     );
